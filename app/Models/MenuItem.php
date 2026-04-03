@@ -10,22 +10,42 @@ class MenuItem extends Model
     use HasFactory;
 
     protected $fillable = [
-        'category_id', 'name', 'description', 'type',
-        'price', 'image_path', 'is_available', 'is_active',
-        'modifiers', 'prep_minutes',
+        'category_id',
+        'name',
+        'description',
+        'type',
+        'price',
+        'image_path',
+        'is_available',
+        'is_active',
+        'modifiers',
+        'prep_minutes',
         'views_count',
         'is_featured',
+        'menu_mode', // normal | spatial
     ];
 
     protected $casts = [
-         'price' => 'decimal:2',
-         'is_available' => 'boolean',
-         'is_active' => 'boolean',
-         'is_featured' => 'boolean',
-         'modifiers' => 'array',
-         'prep_minutes' => 'integer',
-         'views_count' => 'integer',
+        'price' => 'decimal:2',
+        'is_available' => 'boolean',
+        'is_active' => 'boolean',
+        'is_featured' => 'boolean',
+        'modifiers' => 'array',
+        'prep_minutes' => 'integer',
+        'views_count' => 'integer',
     ];
+
+    protected $attributes = [
+        'views_count' => 0,
+        'is_featured' => false,
+        'menu_mode' => 'normal',
+    ];
+
+    /*
+    |--------------------------------------------------------------------------
+    | Relationships
+    |--------------------------------------------------------------------------
+    */
 
     public function category()
     {
@@ -42,62 +62,77 @@ class MenuItem extends Model
         return $this->hasOne(Recipe::class, 'menu_item_id');
     }
 
-
-    protected $attributes = [
-    'views_count' => 0,
-    'is_featured' => false,
-    ];
-
-   
+    /*
+    |--------------------------------------------------------------------------
+    | Scopes
+    |--------------------------------------------------------------------------
+    */
 
     /**
-    * Scope a query to only include available items.
-    */
+     * Only active + available items
+     */
     public function scopeAvailable($query)
     {
-    return $query->where('is_available', true)
-    ->where('is_active', true);
+        return $query
+            ->where('is_available', true)
+            ->where('is_active', true);
     }
 
     /**
-    * Scope a query to only include items of a given type.
-    */
+     * Filter by type (food / drink)
+     */
     public function scopeOfType($query, string $type)
     {
-    return $query->where('type', $type);
+        return $query->where('type', $type);
     }
 
-    /**
-    * Scope a query to only include food items.
-    */
     public function scopeFood($query)
     {
-    return $query->where('type', 'food');
+        return $query->where('type', 'food');
     }
 
-    /**
-    * Scope a query to only include drink items.
-    */
     public function scopeDrink($query)
     {
-    return $query->where('type', 'drink');
+        return $query->where('type', 'drink');
     }
 
     /**
-    * Get formatted price
+     * Only normal menu items
+     */
+    public function scopeNormal($query)
+    {
+        return $query->where('menu_mode', 'normal');
+    }
+
+    /**
+     * Only spatial menu items
+     */
+    public function scopeSpatial($query)
+    {
+        return $query->where('menu_mode', 'spatial');
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Accessors
+    |--------------------------------------------------------------------------
     */
+
+    /**
+     * Formatted price
+     */
     public function getFormattedPriceAttribute(): string
     {
-    return number_format($this->price, 2);
+        return number_format($this->price, 2);
     }
 
     /**
-    * Get full image URL
-    */
+     * Full image URL
+     */
     public function getImageUrlAttribute(): ?string
     {
-    return $this->image_path
-    ? url('storage/' . $this->image_path)
-    : null;
+        return $this->image_path
+            ? url('storage/' . $this->image_path)
+            : null;
     }
 }

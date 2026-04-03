@@ -45,16 +45,20 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
 
     Route::get('/menu/categories', [MenuCategoryController::class, 'index']);
+
     Route::get('/menu/items', [MenuItemController::class, 'index']);
     Route::get('/menu/items/{id}', [MenuItemController::class, 'show']);
-    Route::post('/menu/categories', [MenuCategoryController::class, 'store']);
+    
     Route::post('/menu/items', [MenuItemController::class, 'store']);
-    Route::put('/menu/categories/{id}', [MenuCategoryController::class, 'update']);
+    
     Route::put('/menu/items/{id}', [MenuItemController::class, 'update']);
-    Route::post('/menu/items/{id}/image', [MenuItemController::class, 'uploadImage']);
-    Route::patch('/menu/categories/{id}/toggle', [MenuCategoryController::class, 'toggleActive']);
+    Route::patch('/menu/items/{id}', [MenuItemController::class, 'update']);
+    
     Route::patch('/menu/items/{id}/toggle', [MenuItemController::class, 'toggleActive']);
     Route::patch('/menu/items/{id}/availability', [MenuItemController::class, 'setAvailability']);
+    
+    Route::patch('/menu/items/{id}/spatial', [MenuItemController::class, 'setSpatial']);
+    Route::patch('/menu/items/{id}/normal', [MenuItemController::class, 'setNormal']);
 
     Route::get('/roles', [RoleController::class, 'index']);
     Route::get('/role-permissions', [RoleController::class, 'permissions']);

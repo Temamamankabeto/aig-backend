@@ -119,6 +119,7 @@ class PublicOrderController extends Controller
             'customer_phone' => 'nullable|string|max:20',
             'customer_address' => 'nullable|string|max:500',
             'notes' => 'nullable|string',
+            
         ];
 
         if ($request->order_type === 'dine_in') {

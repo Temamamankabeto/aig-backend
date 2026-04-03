@@ -12,16 +12,21 @@ return new class extends Migration {
             $table->foreignId('category_id')->constrained('menu_categories');
             $table->string('name');
             $table->text('description')->nullable();
-            $table->enum('type', ['food', 'drink'])->default('food'); // must match station split logic
+            $table->enum('type', ['food', 'drink'])->default('food');
             $table->decimal('price', 10, 2);
             $table->string('image_path')->nullable();
             $table->boolean('is_available')->default(true);
+
+            $table->enum('menu_mode', ['normal', 'spatial'])->default('normal');
+
             $table->boolean('is_active')->default(true);
-            $table->json('modifiers')->nullable();  // e.g. sugar level, extra cheese
+            $table->json('modifiers')->nullable();
             $table->unsignedInteger('prep_minutes')->nullable();
+
             $table->timestamps();
 
             $table->index(['type', 'is_available', 'is_active']);
+            $table->index(['menu_mode', 'is_available', 'is_active']);
         });
     }
 
