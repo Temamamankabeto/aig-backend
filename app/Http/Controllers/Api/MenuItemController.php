@@ -287,6 +287,7 @@ class MenuItemController extends Controller
         ]);
     }
 
+<<<<<<< HEAD
     public function setSpatial($id)
     {
         $item = MenuItem::findOrFail($id);
@@ -351,4 +352,37 @@ class MenuItemController extends Controller
 
         return $data;
     }
+=======
+    public function uploadImage(Request $request, $id)
+    {
+        $request->validate([
+            'image' => 'required|image|mimes:jpeg,png,jpg,gif|max:2048', // 2MB max
+        ]);
+
+        $item = MenuItem::findOrFail($id);
+        $this->authorize('uploadImage', $item);
+
+        // Delete old image if exists
+        if ($item->image_path) {
+            Storage::disk('public')->delete($item->image_path);
+        }
+
+        $image = $request->file('image');
+        $imageName = 'menu_' . $item->id . '_' . time() . '_' . Str::random(10) . '.' . $image->getClientOriginalExtension();
+        $path = $image->storeAs('menu-items', $imageName, 'public');
+
+        $item->image_path = $path;
+        $item->save();
+
+        $data = $item->toArray();
+        $data['image_url'] = $item->image_path ? url('storage/' . $item->image_path) : null;
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Image uploaded successfully',
+            'data' => $data
+        ]);
+    }
+
+>>>>>>> 7c68c5f71f4b545175d9eef317f7db6812c801b8
 }
