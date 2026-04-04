@@ -210,13 +210,10 @@ class MenuItemController extends Controller
     {
         $this->authorize('create', MenuItem::class);
 
-        $data = $request->validated();
+        $data = $this->normalizePayload($request->validated());
 
         if ($request->hasFile('image')) {
-            $image = $request->file('image');
-            $imageName = 'menu_' . time() . '_' . Str::random(10) . '.' . $image->getClientOriginalExtension();
-            $path = $image->storeAs('menu-items', $imageName, 'public');
-            $data['image_path'] = $path;
+            $data['image_path'] = $this->storeImage($request->file('image'));
         }
 
         $item = MenuItem::create($data);
@@ -224,6 +221,7 @@ class MenuItemController extends Controller
 
         return response()->json([
             'success' => true,
+            'message' => 'Menu item created successfully.',
             'data' => $this->transformItem($item, true),
         ], 201);
     }
@@ -233,17 +231,21 @@ class MenuItemController extends Controller
         $item = MenuItem::findOrFail($id);
         $this->authorize('update', $item);
 
-        $data = $request->validated();
+        $data = $this->normalizePayload($request->validated());
+
+        if (!empty($data['remove_image']) && $item->image_path) {
+            Storage::disk('public')->delete($item->image_path);
+            $data['image_path'] = null;
+        }
+
+        unset($data['remove_image']);
 
         if ($request->hasFile('image')) {
             if ($item->image_path) {
                 Storage::disk('public')->delete($item->image_path);
             }
 
-            $image = $request->file('image');
-            $imageName = 'menu_' . $item->id . '_' . time() . '_' . Str::random(10) . '.' . $image->getClientOriginalExtension();
-            $path = $image->storeAs('menu-items', $imageName, 'public');
-            $data['image_path'] = $path;
+            $data['image_path'] = $this->storeImage($request->file('image'), $item->id);
         }
 
         $item->update($data);
@@ -251,6 +253,7 @@ class MenuItemController extends Controller
 
         return response()->json([
             'success' => true,
+            'message' => 'Menu item updated successfully.',
             'data' => $this->transformItem($item, true),
         ]);
     }
@@ -287,38 +290,95 @@ class MenuItemController extends Controller
         ]);
     }
 
+    public function setSpatial($id)
+    {
+        $item = MenuItem::findOrFail($id);
+        $this->authorize('update', $item);
+
+        $item->menu_mode = 'spatial';
+        $item->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Menu item set to spatial successfully.',
+            'data' => $this->transformItem($item, true),
+        ]);
+    }
+
+    public function setNormal($id)
+    {
+        $item = MenuItem::findOrFail($id);
+        $this->authorize('update', $item);
+
+        $item->menu_mode = 'normal';
+        $item->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Menu item set to normal successfully.',
+            'data' => $this->transformItem($item, true),
+        ]);
+    }
+
     public function uploadImage(Request $request, $id)
     {
         $request->validate([
-            'image' => 'required|image|mimes:jpeg,png,jpg,gif|max:2048', // 2MB max
+            'image' => ['required', 'image', 'mimes:jpeg,png,jpg,gif,webp', 'max:4096'],
         ]);
 
         $item = MenuItem::findOrFail($id);
-        $this->authorize('uploadImage', $item);
+        $this->authorize('update', $item);
 
-        // Delete old image if exists
         if ($item->image_path) {
             Storage::disk('public')->delete($item->image_path);
         }
 
-        $image = $request->file('image');
-        $imageName = 'menu_' . $item->id . '_' . time() . '_' . Str::random(10) . '.' . $image->getClientOriginalExtension();
-        $path = $image->storeAs('menu-items', $imageName, 'public');
-
-        $item->image_path = $path;
+        $item->image_path = $this->storeImage($request->file('image'), $item->id);
         $item->save();
-
-        $data = $item->toArray();
-        $data['image_url'] = $item->image_path ? url('storage/' . $item->image_path) : null;
 
         return response()->json([
             'success' => true,
             'message' => 'Image uploaded successfully',
-            'data' => $data
+            'data' => $this->transformItem($item, true),
         ]);
     }
 
-    private function transformItem(MenuItem $item, bool $includeCategory = false): array
+    protected function normalizePayload(array $data): array
+    {
+        foreach (['is_available', 'is_active', 'is_featured', 'remove_image'] as $field) {
+            if (array_key_exists($field, $data)) {
+                $data[$field] = filter_var($data[$field], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? false;
+            }
+        }
+
+        if (array_key_exists('price', $data)) {
+            $data['price'] = (float) $data['price'];
+        }
+
+        if (array_key_exists('prep_minutes', $data) && $data['prep_minutes'] !== null && $data['prep_minutes'] !== '') {
+            $data['prep_minutes'] = (int) $data['prep_minutes'];
+        }
+
+        if (array_key_exists('modifiers', $data) && is_string($data['modifiers'])) {
+            $decoded = json_decode($data['modifiers'], true);
+            $data['modifiers'] = json_last_error() === JSON_ERROR_NONE ? $decoded : null;
+        }
+
+        return $data;
+    }
+
+    protected function storeImage($image, ?int $itemId = null): string
+    {
+        $extension = strtolower($image->getClientOriginalExtension());
+
+        $imageName = $itemId
+            ? 'menu_' . $itemId . '_' . time() . '_' . Str::random(10) . '.' . $extension
+            : 'menu_' . time() . '_' . Str::random(10) . '.' . $extension;
+
+        return $image->storeAs('menu-items', $imageName, 'public');
+    }
+
+    protected function transformItem(MenuItem $item, bool $withCategoryObject = true): array
     {
         $data = [
             'id' => $item->id,
@@ -328,19 +388,26 @@ class MenuItemController extends Controller
             'type' => $item->type,
             'price' => (float) $item->price,
             'image_path' => $item->image_path,
-            'image_url' => $item->image_path ? url('storage/' . $item->image_path) : null,
+            'image_url' => $item->image_path ? asset('storage/' . $item->image_path) : null,
             'is_available' => (bool) $item->is_available,
             'is_active' => (bool) $item->is_active,
+            'is_featured' => (bool) ($item->is_featured ?? false),
+            'menu_mode' => $item->menu_mode,
             'prep_minutes' => $item->prep_minutes,
             'modifiers' => $item->modifiers,
+            'views_count' => (int) ($item->views_count ?? 0),
+            'created_at' => $item->created_at,
+            'updated_at' => $item->updated_at,
         ];
 
-        if ($includeCategory && $item->relationLoaded('category')) {
+        if ($withCategoryObject) {
             $data['category'] = $item->category ? [
                 'id' => $item->category->id,
                 'name' => $item->category->name,
-                'type' => $item->category->type,
+                'type' => $item->category->type ?? null,
             ] : null;
+        } else {
+            $data['category'] = $item->category?->name;
         }
 
         return $data;
