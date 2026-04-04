@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\MenuItem;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -9,90 +10,67 @@ class UpdateMenuItemRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return (bool) $this->user()?->can('menu.update');
+        $item = MenuItem::find($this->route('id'));
+
+        return $item
+            ? (bool) $this->user()?->can('update', $item)
+            : false;
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $merged = [];
+
+        if ($this->has('is_active')) {
+            $merged['is_active'] = $this->normalizeBoolean($this->input('is_active'), true);
+        }
+
+        if ($this->has('is_available')) {
+            $merged['is_available'] = $this->normalizeBoolean($this->input('is_available'), true);
+        }
+
+        if ($this->has('is_featured')) {
+            $merged['is_featured'] = $this->normalizeBoolean($this->input('is_featured'), false);
+        }
+
+        if ($this->has('remove_image')) {
+            $merged['remove_image'] = $this->normalizeBoolean($this->input('remove_image'), false);
+        }
+
+        if (!empty($merged)) {
+            $this->merge($merged);
+        }
     }
 
     public function rules(): array
     {
         return [
-            'category_id' => [
-                'sometimes',
-                'integer',
-                'exists:menu_categories,id'
-            ],
-
-            'name' => [
-                'sometimes',
-                'string',
-                'max:255'
-            ],
-
-            'description' => [
-                'sometimes',
-                'nullable',
-                'string'
-            ],
-
-            'type' => [
-                'sometimes',
-                Rule::in(['food', 'drink'])
-            ],
-
-            'price' => [
-                'sometimes',
-                'numeric',
-                'min:0'
-            ],
-
-            'image' => [
-                'nullable',
-                'image',
-                'mimes:jpg,jpeg,png,webp',
-                'max:2048'
-            ],
-
-            'menu_mode' => [
-                'sometimes',
-                Rule::in(['normal', 'spatial'])
-            ],
-
-            'modifiers' => [
-                'sometimes',
-                'nullable',
-                'array'
-            ],
-
-            'prep_minutes' => [
-                'sometimes',
-                'nullable',
-                'integer',
-                'min:0',
-                'max:600'
-            ],
-
-            'is_available' => [
-                'sometimes',
-                'boolean'
-            ],
-
-            'is_active' => [
-                'sometimes',
-                'boolean'
-            ],
-
-            'is_featured' => [
-                'sometimes',
-                'boolean'
-            ],
+            'category_id' => ['sometimes', 'required', 'integer', 'exists:menu_categories,id'],
+            'name' => ['sometimes', 'required', 'string', 'max:255'],
+            'description' => ['nullable', 'string'],
+            'type' => ['sometimes', 'required', Rule::in(['food', 'drink'])],
+            'price' => ['sometimes', 'required', 'numeric', 'min:0'],
+            'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp,gif', 'max:4096'],
+            'is_available' => ['nullable', 'boolean'],
+            'is_active' => ['nullable', 'boolean'],
+            'is_featured' => ['nullable', 'boolean'],
+            'menu_mode' => ['nullable', Rule::in(['normal', 'spatial'])],
+            'modifiers' => ['nullable'],
+            'prep_minutes' => ['nullable', 'integer', 'min:0'],
+            'remove_image' => ['nullable', 'boolean'],
         ];
     }
 
-    protected function prepareForValidation(): void
+    private function normalizeBoolean($value, bool $default): bool
     {
-        $this->merge([
-            'is_available' => $this->boolean('is_available'),
-            'is_active' => $this->boolean('is_active'),
-            'is_featured' => $this->boolean('is_featured'),
-        ]);
+        if ($value === null || $value === '') {
+            return $default;
+        }
+
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        return filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? $default;
     }
 }
