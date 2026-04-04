@@ -287,72 +287,6 @@ class MenuItemController extends Controller
         ]);
     }
 
-<<<<<<< HEAD
-    public function setSpatial($id)
-    {
-        $item = MenuItem::findOrFail($id);
-        $this->authorize('update', $item);
-
-        $item->menu_mode = 'spatial';
-        $item->save();
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Menu item set to spatial successfully.',
-            'data' => $this->transformItem($item, true),
-        ]);
-    }
-
-    public function setNormal($id)
-    {
-        $item = MenuItem::findOrFail($id);
-        $this->authorize('update', $item);
-
-        $item->menu_mode = 'normal';
-        $item->save();
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Menu item set to normal successfully.',
-            'data' => $this->transformItem($item, true),
-        ]);
-    }
-
-    protected function transformItem(MenuItem $item, bool $withCategoryObject = true): array
-    {
-        $data = [
-            'id' => $item->id,
-            'category_id' => $item->category_id,
-            'name' => $item->name,
-            'description' => $item->description,
-            'type' => $item->type,
-            'price' => (float) $item->price,
-            'image_path' => $item->image_path,
-            'image_url' => $item->image_path ? url('storage/' . $item->image_path) : null,
-            'is_available' => (bool) $item->is_available,
-            'is_active' => (bool) $item->is_active,
-            'is_featured' => (bool) ($item->is_featured ?? false),
-            'menu_mode' => $item->menu_mode,
-            'prep_minutes' => $item->prep_minutes,
-            'modifiers' => $item->modifiers,
-            'views_count' => (int) ($item->views_count ?? 0),
-            'created_at' => $item->created_at,
-            'updated_at' => $item->updated_at,
-        ];
-
-        if ($withCategoryObject) {
-            $data['category'] = $item->category ? [
-                'id' => $item->category->id,
-                'name' => $item->category->name,
-                'type' => $item->category->type ?? null,
-            ] : null;
-        } else {
-            $data['category'] = $item->category?->name;
-        }
-
-        return $data;
-    }
-=======
     public function uploadImage(Request $request, $id)
     {
         $request->validate([
@@ -384,5 +318,31 @@ class MenuItemController extends Controller
         ]);
     }
 
->>>>>>> 7c68c5f71f4b545175d9eef317f7db6812c801b8
+    private function transformItem(MenuItem $item, bool $includeCategory = false): array
+    {
+        $data = [
+            'id' => $item->id,
+            'category_id' => $item->category_id,
+            'name' => $item->name,
+            'description' => $item->description,
+            'type' => $item->type,
+            'price' => (float) $item->price,
+            'image_path' => $item->image_path,
+            'image_url' => $item->image_path ? url('storage/' . $item->image_path) : null,
+            'is_available' => (bool) $item->is_available,
+            'is_active' => (bool) $item->is_active,
+            'prep_minutes' => $item->prep_minutes,
+            'modifiers' => $item->modifiers,
+        ];
+
+        if ($includeCategory && $item->relationLoaded('category')) {
+            $data['category'] = $item->category ? [
+                'id' => $item->category->id,
+                'name' => $item->category->name,
+                'type' => $item->category->type,
+            ] : null;
+        }
+
+        return $data;
+    }
 }
