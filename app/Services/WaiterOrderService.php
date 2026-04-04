@@ -24,25 +24,33 @@ class WaiterOrderService
         return DB::transaction(function () use ($data, $authUserId) {
             $orderNumber = $this->orderNumberService->generate();
 
-            $subtotal = 0;
+            $subtotal = 0.0;
             $preparedItems = [];
 
-            foreach ($data['items'] as $item) {
-                $menuItem = MenuItem::findOrFail($item['menu_item_id']);
+            foreach (($data['items'] ?? []) as $item) {
+                $menuItemId = (int) ($item['menu_item_id'] ?? 0);
+                $quantity = (int) ($item['quantity'] ?? 0);
+
+                if ($menuItemId <= 0) {
+                    throw new RuntimeException('Invalid menu item.');
+                }
+
+                if ($quantity <= 0) {
+                    throw new RuntimeException('Item quantity must be greater than zero.');
+                }
+
+                $menuItem = MenuItem::findOrFail($menuItemId);
 
                 if (!$menuItem->is_active || !$menuItem->is_available) {
                     throw new RuntimeException("Item {$menuItem->name} is not available.");
                 }
 
-                $quantity = (int) ($item['quantity'] ?? 0);
-                if ($quantity <= 0) {
-                    throw new RuntimeException("Invalid quantity for {$menuItem->name}.");
-                }
-
-                $unitPrice = (float) $menuItem->price;
-                $lineTotal = $unitPrice * $quantity;
-
+                $unitPrice = round((float) $menuItem->price, 2);
+                $lineTotal = round($unitPrice * $quantity, 2);
                 $subtotal += $lineTotal;
+
+                $itemNote = $item['notes'] ?? $item['note'] ?? null;
+                $itemModifiers = $item['modifiers'] ?? null;
 
                 $preparedItems[] = [
                     'menu_item_id' => $menuItem->id,
@@ -51,25 +59,37 @@ class WaiterOrderService
                     'line_total' => $lineTotal,
                     'station' => $menuItem->type === 'food' ? 'kitchen' : 'bar',
                     'item_status' => 'pending',
-                    'notes' => $item['notes'] ?? $item['note'] ?? null,
-                    'modifiers' => $item['modifiers'] ?? null,
+                    'notes' => is_string($itemNote) ? (trim($itemNote) ?: null) : null,
+                    'modifiers' => is_array($itemModifiers) ? $itemModifiers : null,
                 ];
             }
 
+            if (empty($preparedItems)) {
+                throw new RuntimeException('At least one valid order item is required.');
+            }
+
+            $subtotal = round($subtotal, 2);
             $tax = round($subtotal * 0.10, 2);
             $serviceCharge = round($subtotal * 0.05, 2);
-            $discount = (float) ($data['discount'] ?? 0);
+            $discount = round((float) ($data['discount'] ?? 0), 2);
+
+            if ($discount < 0) {
+                $discount = 0;
+            }
+
             $total = round(($subtotal + $tax + $serviceCharge) - $discount, 2);
 
             if ($total < 0) {
                 $total = 0;
             }
 
-            $source = $data['_source'] ?? 'waiter';
+            $source = (string) ($data['_source'] ?? 'waiter');
             $isCashierOrder = $source === 'cashier';
 
-            $orderType = $data['order_type'] ?? 'dine_in';
-            $tableId = $orderType === 'dine_in' ? ($data['table_id'] ?? null) : null;
+            $orderType = (string) ($data['order_type'] ?? 'dine_in');
+            $tableId = $orderType === 'dine_in'
+                ? (!empty($data['table_id']) ? (int) $data['table_id'] : null)
+                : null;
 
             if ($orderType === 'dine_in' && empty($tableId)) {
                 throw new RuntimeException('Table is required for dine-in orders.');
@@ -79,52 +99,58 @@ class WaiterOrderService
                 $tableId = null;
             }
 
+            if ($orderType === 'delivery' && empty($data['customer_address'])) {
+                throw new RuntimeException('Customer address is required for delivery orders.');
+            }
+
             if ($orderType === 'dine_in' && $tableId) {
-                $table = DiningTable::where('id', $tableId)
+                DiningTable::query()
+                    ->where('id', $tableId)
                     ->where('is_active', true)
                     ->lockForUpdate()
                     ->firstOrFail();
-
-                if (!in_array($table->status, ['available', 'reserved'], true)) {
-                    throw new RuntimeException("Table {$table->table_number} is not available.");
-                }
             }
 
-            /*
-            |--------------------------------------------------------------------------
-            | Status rules
-            |--------------------------------------------------------------------------
-            | Waiter order:
-            |   order status => confirmed
-            |   bill status  => draft
-            |
-            | Cashier order:
-            |   order status => pending
-            |   bill status  => draft
-            |
-            | Bill should be issued later by:
-            |   POST /cashier/bills/{orderId}/issue
-            |--------------------------------------------------------------------------
-            */
             $orderStatus = $isCashierOrder ? 'pending' : 'confirmed';
             $billStatus = 'draft';
             $issuedAt = null;
+
+            $customerName = isset($data['customer_name'])
+                ? (trim((string) $data['customer_name']) ?: 'Guest')
+                : 'Guest';
+
+            $customerPhone = isset($data['customer_phone'])
+                ? (trim((string) $data['customer_phone']) ?: null)
+                : null;
+
+            $customerAddress = isset($data['customer_address'])
+                ? (trim((string) $data['customer_address']) ?: null)
+                : null;
+
+            $orderNotes = isset($data['notes'])
+                ? (trim((string) $data['notes']) ?: null)
+                : null;
+
+            $waiterId = !empty($data['waiter_id'])
+                ? (int) $data['waiter_id']
+                : $authUserId;
 
             $order = Order::create([
                 'order_number' => $orderNumber,
                 'order_type' => $orderType,
                 'table_id' => $tableId,
                 'created_by' => $authUserId,
-                'waiter_id' => $data['waiter_id'] ?? $authUserId,
-                'customer_name' => !empty($data['customer_name']) ? $data['customer_name'] : 'Guest',
-                'customer_phone' => $data['customer_phone'] ?? null,
-                'customer_address' => $data['customer_address'] ?? null,
+                'waiter_id' => $waiterId,
+                'customer_name' => $customerName,
+                'customer_phone' => $customerPhone,
+                'customer_address' => $customerAddress,
                 'status' => $orderStatus,
                 'subtotal' => $subtotal,
                 'tax' => $tax,
                 'service_charge' => $serviceCharge,
+                'discount' => $discount,
                 'total' => $total,
-                'notes' => $data['notes'] ?? null,
+                'notes' => $orderNotes,
                 'ordered_at' => now(),
             ]);
 

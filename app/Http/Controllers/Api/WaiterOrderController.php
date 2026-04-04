@@ -34,18 +34,19 @@ class WaiterOrderController extends Controller
     public function menu(Request $request)
     {
         $this->authorize('create', Order::class);
+    
         $query = MenuItem::query()
             ->with(['category'])
             ->where('is_active', true)
             ->where('is_available', true);
-
-        if ($request->filled('type') && in_array($request->type, ['food', 'drink'])) {
+    
+        if ($request->filled('type') && in_array($request->type, ['food', 'drink'], true)) {
             $query->where('type', $request->type);
         }
-
+    
         if ($request->filled('search')) {
-            $search = trim($request->search);
-
+            $search = trim((string) $request->search);
+    
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
                   ->orWhere('description', 'like', "%{$search}%")
@@ -54,7 +55,7 @@ class WaiterOrderController extends Controller
                   });
             });
         }
-
+    
         $items = $query
             ->orderBy('type')
             ->orderBy('name')
@@ -67,14 +68,15 @@ class WaiterOrderController extends Controller
                     'price' => (float) $item->price,
                     'description' => $item->description,
                     'category' => optional($item->category)->name,
-                    'image_url' => $item->image
-                        ? url('storage/' . $item->image)
+                    'image_path' => $item->image_path,
+                    'image_url' => $item->image_path
+                        ? asset('storage/' . $item->image_path)
                         : ($item->image_url ?? null),
                     'is_available' => (bool) $item->is_available,
                 ];
             })
             ->values();
-
+    
         return response()->json([
             'success' => true,
             'data' => $items,
@@ -163,12 +165,17 @@ class WaiterOrderController extends Controller
         $query = DiningTable::query()
             ->where('is_active', true);
     
+        if ($request->boolean('available_only', false)) {
+            $query->where('status', 'available');
+        }
+    
         if ($request->filled('search')) {
             $search = trim((string) $request->search);
     
             $query->where(function ($q) use ($search) {
                 $q->where('table_number', 'like', "%{$search}%")
-                  ->orWhere('status', 'like', "%{$search}%");
+                  ->orWhere('status', 'like', "%{$search}%")
+                  ->orWhere('section', 'like', "%{$search}%");
             });
         }
     
@@ -181,7 +188,6 @@ class WaiterOrderController extends Controller
     
         if ($request->filled('section')) {
             $section = trim((string) $request->section);
-    
             $query->where('section', 'like', "%{$section}%");
         }
     
@@ -219,26 +225,112 @@ class WaiterOrderController extends Controller
 
     /**
      * Store waiter order
-     */
-    public function store(StoreOrderRequest $request)
-    {
-        $this->authorize('create', Order::class);
+  /**
+ * Store waiter order
+ */
+public function store(StoreOrderRequest $request)
+{
+    $this->authorize('create', Order::class);
 
-        try {
-            $order = $this->waiterOrderService->createOrder($request->validated(), (int) auth()->id());
+    try {
+        $validated = $request->validated();
+        $userId = (int) auth()->id();
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Order created successfully',
-                'data' => $order,
-            ], 201);
-        } catch (\Exception $e) {
+        $orderType = $validated['order_type'] ?? null;
+
+        $validated['waiter_id'] = $userId;
+        $validated['created_by'] = $userId;
+        $validated['_source'] = 'waiter';
+
+        $validated['customer_name'] = isset($validated['customer_name'])
+            ? (trim((string) $validated['customer_name']) ?: 'Guest')
+            : 'Guest';
+
+        $validated['customer_phone'] = isset($validated['customer_phone'])
+            ? (trim((string) $validated['customer_phone']) ?: null)
+            : null;
+
+        $validated['customer_address'] = isset($validated['customer_address'])
+            ? (trim((string) $validated['customer_address']) ?: null)
+            : null;
+
+        $validated['notes'] = isset($validated['notes'])
+            ? (trim((string) $validated['notes']) ?: null)
+            : null;
+
+        $validated['discount'] = isset($validated['discount'])
+            ? (float) $validated['discount']
+            : 0;
+
+        if ($orderType !== 'dine_in') {
+            $validated['table_id'] = null;
+        }
+
+        if ($orderType === 'delivery' && empty($validated['customer_address'])) {
             return response()->json([
                 'success' => false,
-                'message' => $e->getMessage(),
+                'message' => 'Customer address is required for delivery orders.',
+                'errors' => [
+                    'customer_address' => ['Customer address is required for delivery orders.'],
+                ],
             ], 422);
         }
+
+        if ($orderType === 'dine_in' && empty($validated['table_id'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Table is required for dine-in orders.',
+                'errors' => [
+                    'table_id' => ['Table is required for dine-in orders.'],
+                ],
+            ], 422);
+        }
+
+        if ($orderType === 'takeaway') {
+            $validated['customer_address'] = null;
+        }
+
+        $validated['items'] = collect($validated['items'] ?? [])
+            ->map(function ($item) {
+                $itemNote = $item['notes'] ?? $item['note'] ?? null;
+
+                return [
+                    'menu_item_id' => (int) ($item['menu_item_id'] ?? 0),
+                    'quantity' => max(1, (int) ($item['quantity'] ?? 1)),
+                    'notes' => is_string($itemNote) ? (trim($itemNote) ?: null) : null,
+                    'modifiers' => isset($item['modifiers']) && is_array($item['modifiers'])
+                        ? $item['modifiers']
+                        : [],
+                ];
+            })
+            ->filter(fn ($item) => $item['menu_item_id'] > 0 && $item['quantity'] > 0)
+            ->values()
+            ->all();
+
+        if (empty($validated['items'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'At least one valid order item is required.',
+                'errors' => [
+                    'items' => ['At least one valid order item is required.'],
+                ],
+            ], 422);
+        }
+
+        $order = $this->waiterOrderService->createOrder($validated, $userId);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Order created successfully.',
+            'data' => $order,
+        ], 201);
+    } catch (\Throwable $e) {
+        return response()->json([
+            'success' => false,
+            'message' => $e->getMessage() ?: 'Failed to create order.',
+        ], 422);
     }
+}
 
    
 

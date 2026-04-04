@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Order;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -9,7 +10,7 @@ class StoreOrderRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return (bool) $this->user()?->can('orders.create');
+        return (bool) $this->user()?->can('create', Order::class);
     }
 
     public function rules(): array
@@ -31,6 +32,7 @@ class StoreOrderRequest extends FormRequest
             'items.*.menu_item_id' => ['required', 'integer', 'exists:menu_items,id'],
             'items.*.quantity' => ['required', 'integer', 'min:1'],
             'items.*.notes' => ['nullable', 'string'],
+            'items.*.note' => ['nullable', 'string'],
             'items.*.modifiers' => ['nullable', 'array'],
         ];
     }
@@ -41,27 +43,22 @@ class StoreOrderRequest extends FormRequest
             $orderType = $this->input('order_type');
             $isCashierRoute = $this->isCashierOrderRequest();
 
-            // dine-in must have table
             if ($orderType === 'dine_in' && !$this->filled('table_id')) {
                 $validator->errors()->add('table_id', 'Table is required for dine-in orders.');
             }
 
-            // takeaway must not carry table
             if ($orderType === 'takeaway' && $this->filled('table_id')) {
                 $validator->errors()->add('table_id', 'Table is not allowed for takeaway orders.');
             }
 
-            // delivery must have address
             if ($orderType === 'delivery' && !$this->filled('customer_address')) {
                 $validator->errors()->add('customer_address', 'Customer address is required for delivery orders.');
             }
 
-            // cashier can create only dine_in or takeaway
             if ($isCashierRoute && !in_array($orderType, ['dine_in', 'takeaway'], true)) {
                 $validator->errors()->add('order_type', 'Cashier can only create dine-in or takeaway orders.');
             }
 
-            // cashier must assign waiter
             if ($isCashierRoute && !$this->filled('waiter_id')) {
                 $validator->errors()->add('waiter_id', 'Waiter is required for cashier order.');
             }
@@ -70,6 +67,17 @@ class StoreOrderRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        $items = collect($this->input('items', []))
+            ->map(function ($item) {
+                $noteValue = $item['notes'] ?? $item['note'] ?? null;
+
+                return [
+                    ...$item,
+                    'notes' => is_string($noteValue) ? trim($noteValue) : $noteValue,
+                ];
+            })
+            ->all();
+
         $this->merge([
             'customer_name' => $this->filled('customer_name')
                 ? trim((string) $this->input('customer_name'))
@@ -86,6 +94,8 @@ class StoreOrderRequest extends FormRequest
             'notes' => $this->filled('notes')
                 ? trim((string) $this->input('notes'))
                 : $this->input('notes'),
+
+            'items' => $items,
         ]);
     }
 
