@@ -62,37 +62,62 @@ class AuthController extends Controller
     /**
      * Login user
      */
-    public function login(Request $request)
-    {
-        $request->validate([
-            'email' => ['required', 'email'],
-            'password' => ['required', 'string'],
-        ]);
+   public function login(Request $request)
+{
+    $request->validate([
+        'email' => ['required', 'email'],
+        'password' => ['required', 'string'],
+    ]);
 
-        $user = User::where('email', $request->email)->first();
+    $user = User::where('email', $request->email)->first();
 
-        if (!$user || !Hash::check($request->password, $user->password)) {
-            throw ValidationException::withMessages([
-                'email' => ['Invalid email or password.'],
-            ]);
-        }
-
-        $token = $user->createToken('aig-api-token')->plainTextToken;
-
-        return response()->json([
-            'success' => true,
-            'token' => $token,
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'phone' => $user->phone,
-                'address' => $user->address,
-            ],
-            'roles' => $user->getRoleNames()->values()->all(),
-            'permissions' => $user->getAllPermissions()->pluck('name')->values()->all(),
+    if (!$user || !Hash::check($request->password, $user->password)) {
+        throw ValidationException::withMessages([
+            'email' => ['Invalid email or password.'],
         ]);
     }
+
+    // ---------------- Access Token ----------------
+    $accessToken = $user->createToken('aig-api-token')->plainTextToken;
+
+    // ---------------- Refresh Token ----------------
+    $refreshToken = Str::random(64); // generate a secure random token
+
+    // Store refresh token in DB (or cache) with user_id
+    $user->update([
+        'refresh_token' => hash('sha256', $refreshToken),
+        'refresh_token_expires_at' => now()->addDays(30), // optional expiration
+    ]);
+
+    // ---------------- Cookie for Web ----------------
+    $cookie = cookie(
+        'refresh_token',          // cookie name
+        $refreshToken,            // value
+        60 * 24 * 30,             // minutes (30 days)
+        '/',                      // path
+        null,                     // domain (null = current domain)
+        true,                     // secure
+        true,                     // httpOnly
+        false,                    // raw
+        'Strict'                  // sameSite
+    );
+
+    // ---------------- JSON Response ----------------
+    return response()->json([
+        'success' => true,
+        'token' => $accessToken,
+        'refresh_token' => $refreshToken, // optional in JSON, mobile apps need it
+        'user' => [
+            'id' => $user->id,
+            'name' => $user->name,
+            'email' => $user->email,
+            'phone' => $user->phone,
+            'address' => $user->address,
+        ],
+        'roles' => $user->getRoleNames()->values()->all(),
+        'permissions' => $user->getAllPermissions()->pluck('name')->values()->all(),
+    ])->cookie($cookie);
+}
 
     /**
      * Get authenticated user
