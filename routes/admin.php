@@ -157,10 +157,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/purchase-orders/{id}/receive', [StockReceivingController::class, 'receive']);
 
     Route::get('/recipes', [RecipeController::class, 'index']);
-    Route::get('/recipes/{id}', [RecipeController::class, 'show']);
+    Route::get('/recipes/menu-item/{menuItemId}', [RecipeController::class, 'showByMenuItem']);
     Route::get('/menu/items/{id}/recipe', [RecipeController::class, 'showByMenuItem']);
+    Route::get('/recipes/{id}', [RecipeController::class, 'show']);
     Route::post('/recipes', [RecipeController::class, 'store']);
     Route::put('/recipes/{id}', [RecipeController::class, 'update']);
+    Route::patch('/recipes/{id}', [RecipeController::class, 'update']);
 
     
 });
