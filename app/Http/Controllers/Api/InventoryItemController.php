@@ -9,17 +9,30 @@ use Illuminate\Http\Request;
 class InventoryItemController extends Controller
 {
     public function index(Request $request)
-    {
-        $this->authorize('viewAny', InventoryItem::class);
-        $q = InventoryItem::query()->orderBy('id', 'desc');
+{
+    $this->authorize('viewAny', InventoryItem::class);
+    
+    $q = InventoryItem::query()->orderBy('id', 'desc');
 
-        if ($request->filled('category')) $q->where('category', $request->category);
-        if ($request->filled('is_active')) $q->where('is_active', (bool) $request->is_active);
-        if ($request->filled('search')) $q->where('name', 'like', '%' . $request->search . '%');
+    if ($request->filled('category')) $q->where('category', $request->category);
+    if ($request->filled('is_active')) $q->where('is_active', (bool) $request->is_active);
+    if ($request->filled('search')) $q->where('name', 'like', '%' . $request->search . '%');
 
-        return response()->json(['success' => true, 'data' => $q->paginate((int) ($request->get('per_page', 20)))]);
-    }
+    // 1. Get the paginator instance
+    $paginatedItems = $q->paginate((int) $request->get('per_page', 20));
 
+    // 2. Return the exact structure you requested
+    return response()->json([
+        'success' => true,
+        'data' => $paginatedItems->items(), // This returns the array of items only
+        'meta' => [
+            'current_page' => $paginatedItems->currentPage(),
+            'per_page'     => $paginatedItems->perPage(),
+            'total'        => $paginatedItems->total(),
+            'last_page'    => $paginatedItems->lastPage(),
+        ],
+    ]);
+}
     public function show($id)
     {
         $row = InventoryItem::with('transactions')->findOrFail($id);
