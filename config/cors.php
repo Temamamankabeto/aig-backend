@@ -15,8 +15,9 @@ return [
     'allowed_origins' => [
         'http://localhost:3000',
         'http://127.0.0.1:3000',
-        'http://172.25.20.97:3000',
+
         'https://cafeaig.vercel.app',
+        'http://192.168.2.1:3000',
     ],
 
     'allowed_origins_patterns' => [],
@@ -27,5 +28,7 @@ return [
 
     'max_age' => 0,
 
+
     'supports_credentials' => true,
+
 ];

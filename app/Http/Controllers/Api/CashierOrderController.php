@@ -173,41 +173,27 @@ class CashierOrderController extends Controller
     public function tables(Request $request)
     {
         $this->authorize('create', Order::class);
-
-        $query = DiningTable::query()
-            ->where('is_active', true);
-
+    
+        $query = DiningTable::query(); // removed is_active filter
+    
         if ($request->filled('search')) {
             $search = trim((string) $request->search);
-
+    
             $query->where(function ($q) use ($search) {
                 $q->where('table_number', 'like', "%{$search}%")
-                    ->orWhere('status', 'like', "%{$search}%")
-                    ->orWhere('section', 'like', "%{$search}%");
+                  ->orWhere('status', 'like', "%{$search}%")
+                  ->orWhere('section', 'like', "%{$search}%");
             });
         }
-
-        if (
-            $request->filled('status') &&
-            in_array($request->status, ['available', 'occupied', 'reserved', 'cleaning'], true)
-        ) {
-            $query->where('status', $request->status);
-        }
-
+    
+        // removed status filter completely
+    
         if ($request->filled('section')) {
             $section = trim((string) $request->section);
             $query->where('section', 'like', "%{$section}%");
         }
-
+    
         $tables = $query
-            ->orderByRaw("
-                CASE
-                    WHEN status = 'available' THEN 1
-                    WHEN status = 'reserved' THEN 2
-                    WHEN status = 'occupied' THEN 3
-                    ELSE 4
-                END
-            ")
             ->orderBy('table_number')
             ->get()
             ->map(function ($table) {
@@ -223,10 +209,10 @@ class CashierOrderController extends Controller
                 ];
             })
             ->values();
-
+    
         return response()->json([
             'success' => true,
-            'message' => 'Tables fetched successfully',
+            'message' => 'All tables fetched successfully',
             'data' => $tables,
         ]);
     }
@@ -265,10 +251,10 @@ class CashierOrderController extends Controller
     public function cashierStore(StoreOrderRequest $request)
     {
         $this->authorize('create', Order::class);
-
+    
         try {
             $validated = $request->validated();
-
+    
             if (empty($validated['waiter_id'])) {
                 return response()->json([
                     'success' => false,
@@ -278,23 +264,37 @@ class CashierOrderController extends Controller
                     ],
                 ], 422);
             }
-
-            $validated['order_type'] = 'takeaway';
-            $validated['table_id'] = null;
+    
+            $validated['order_type'] = $validated['order_type'] ?? 'takeaway';
+            $validated['table_id'] = $validated['order_type'] === 'dine_in'
+                ? ($validated['table_id'] ?? null)
+                : null;
+    
             $validated['customer_name'] = $validated['customer_name'] ?? 'Guest';
             $validated['customer_phone'] = $validated['customer_phone'] ?? null;
-            $validated['customer_address'] = null;
+            $validated['customer_address'] = $validated['customer_address'] ?? null;
             $validated['_source'] = 'cashier';
-
+    
             $order = $this->waiterOrderService->createOrder(
                 $validated,
                 (int) auth()->id()
             );
-
+    
+            $order->load('bill');
+    
             return response()->json([
                 'success' => true,
                 'message' => 'Cashier order created successfully',
-                'data' => $order,
+                'data' => [
+                    'id' => $order->id,
+                    'order_number' => $order->order_number,
+                    'bill_id' => $order->bill->id ?? null,
+                    'bill' => $order->bill ? [
+                        'id' => $order->bill->id,
+                        'bill_number' => $order->bill->bill_number ?? null,
+                        'total' => $order->bill->total ?? null,
+                    ] : null,
+                ],
             ], 201);
         } catch (Throwable $e) {
             return response()->json([

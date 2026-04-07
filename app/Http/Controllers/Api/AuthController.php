@@ -91,15 +91,14 @@ class AuthController extends Controller
 
     // ---------------- Cookie for Web ----------------
    $cookie = cookie(
-    'refresh_token',         // Cookie name
-    $refreshToken,           // Value (plain token to send, hash in DB)
-    60 * 24 * 30,  // Expiration in minutes (e.g., 30 days = 60*24*30)
-    '/',                     // Path
-    null,                    // Domain (null = current domain; good for localhost/mobile)
-    false,                 // Secure (true for HTTPS production, false for local/dev)
-    true                     // HttpOnly (prevents JS access)
-)->withSameSite('Lax');     // SameSite policy (safe default for dev/mobile)
-
+    'refresh_token',
+    $refreshToken,
+    60 * 24 * 30,
+    '/',
+    null,
+    false, // http, dev
+    true
+)->withSameSite('Lax'); // Lax works locally
     // ---------------- JSON Response ----------------
     return response()->json([
         'success' => true,

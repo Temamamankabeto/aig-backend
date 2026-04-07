@@ -25,7 +25,7 @@ use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WaiterOrderController;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
     Route::get('/general/dashboard', [DashboardController::class, 'generalDashboard']);
 
     Route::get('/reports/sales-analytics', [AnalyticsReportController::class, 'salesAnalytics']);

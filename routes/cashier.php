@@ -1,11 +1,13 @@
 <?php
 
 use App\Http\Controllers\Api\CashierOrderController;
-use App\Http\Controllers\Api\CashierBillController;
-use App\Http\Controllers\Api\CashierPaymentController;
-use App\Http\Controllers\Api\CashierRefundController;
+use App\Http\Controllers\Api\BillController as CashierBillController;
+use App\Http\Controllers\Api\PaymentController as CashierPaymentController;
+use App\Http\Controllers\Api\RefundRequestController as CashierRefundController;
 use App\Http\Controllers\Api\CashShiftController;
+use App\Http\Controllers\Api\CashShiftMovementController;
 use App\Http\Controllers\Api\CashierReportController;
+// use App\Http\Controllers\Api\BillController as CashierReportController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
@@ -40,10 +42,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/cashier/bills/{orderId}/issue', [CashierBillController::class, 'issue']);
     Route::post('/cashier/bills/{id}/void', [CashierBillController::class, 'void']);
 
-
+    // keep only if you really have this controller method
     Route::post('/cashier/bills/{id}/voide', [CashierBillController::class, 'voide']);
-
-
 
     /*
     |--------------------------------------------------------------------------
@@ -66,38 +66,39 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     /*
     |--------------------------------------------------------------------------
-    | Cash Shift
+    | Cash Shifts
     |--------------------------------------------------------------------------
     */
     Route::post('/cashier/shifts/open', [CashShiftController::class, 'open']);
-    Route::post('/cashier/shifts/close', [CashShiftController::class, 'close']);
+    Route::post('/cashier/shifts/{id}/close', [CashShiftController::class, 'close']);
     Route::get('/cashier/shifts/current', [CashShiftController::class, 'current']);
     Route::get('/cashier/shifts', [CashShiftController::class, 'index']);
     Route::get('/cashier/shifts/{id}', [CashShiftController::class, 'show']);
 
     /*
-|--------------------------------------------------------------------------
-| Cashier Reports
-|--------------------------------------------------------------------------
-*/
+    |--------------------------------------------------------------------------
+    | Cash Shift Movements
+    |--------------------------------------------------------------------------
+    */
+    Route::get('/cashier/shifts/{shiftId}/movements', [CashShiftMovementController::class, 'index']);
+    Route::post('/cashier/shifts/{shiftId}/movements', [CashShiftMovementController::class, 'store']);
+    Route::get('/cashier/shifts/{shiftId}/movements/{movementId}', [CashShiftMovementController::class, 'show']);
+    Route::delete('/cashier/shifts/{shiftId}/movements/{movementId}', [CashShiftMovementController::class, 'destroy']);
 
-Route::get('/cashier/reports/sales-summary', [CashierReportController::class, 'salesSummary']);
-
-Route::get('/cashier/reports/payment-method-summary', [CashierReportController::class, 'paymentMethodSummary']);
-
-Route::get('/cashier/reports/shift-summary', [CashierReportController::class, 'shiftSummary']);
-
-Route::get('/cashier/reports/cashier-performance', [CashierReportController::class, 'cashierPerformance']);
-
-Route::get('/cashier/reports/refund-summary', [CashierReportController::class, 'refundSummary']);
-
-Route::get('/cashier/reports/voided-bills', [CashierReportController::class, 'voidedBills']);
-
-Route::get('/cashier/reports/pending-payments', [CashierReportController::class, 'pendingPayments']);
-
-Route::get('/cashier/reports/x-report', [CashierReportController::class, 'xReport']);
-
-Route::post('/cashier/reports/z-report', [CashierReportController::class, 'zReport']);
+    /*
+    |--------------------------------------------------------------------------
+    | Cashier Reports
+    |--------------------------------------------------------------------------
+    */
+    Route::get('/cashier/reports/sales-summary', [CashierReportController::class, 'salesSummary']);
+    Route::get('/cashier/reports/payment-method-summary', [CashierReportController::class, 'paymentMethodSummary']);
+    Route::get('/cashier/reports/shift-summary', [CashierReportController::class, 'shiftSummary']);
+    Route::get('/cashier/reports/cashier-performance', [CashierReportController::class, 'cashierPerformance']);
+    Route::get('/cashier/reports/refund-summary', [CashierReportController::class, 'refundSummary']);
+    Route::get('/cashier/reports/voided-bills', [CashierReportController::class, 'voidedBills']);
+    Route::get('/cashier/reports/pending-payments', [CashierReportController::class, 'pendingPayments']);
+    Route::get('/cashier/reports/x-report', [CashierReportController::class, 'xReport']);
+    Route::post('/cashier/reports/z-report', [CashierReportController::class, 'zReport']);
 
     /*
     |--------------------------------------------------------------------------
