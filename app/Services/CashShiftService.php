@@ -59,26 +59,66 @@ class CashShiftService
 
     public function withSummary(CashShift $shift): array
     {
-        return array_merge($shift->loadMissing('cashier')->toArray(), ['summary' => $this->summary($shift)]);
+        return array_merge(
+            $shift->loadMissing('cashier')->toArray(),
+            ['summary' => $this->summary($shift)]
+        );
     }
 
     public function summary(CashShift $shift): array
     {
-        $payments = Payment::where('cash_shift_id', $shift->id)->where('status', 'paid');
+        $payments = Payment::where('cash_shift_id', $shift->id)
+            ->where('status', 'paid');
+    
         $cashPayments = (clone $payments)->where('method', 'cash')->sum('amount');
         $cardPayments = (clone $payments)->where('method', 'card')->sum('amount');
         $mobilePayments = (clone $payments)->where('method', 'mobile')->sum('amount');
         $transferPayments = (clone $payments)->where('method', 'transfer')->sum('amount');
+    
         $totalPayments = $cashPayments + $cardPayments + $mobilePayments + $transferPayments;
-
+    
+        $movements = DB::table('cash_shift_movements')
+            ->where('cash_shift_id', $shift->id);
+    
+        $openingAdjustments = (clone $movements)
+            ->where('type', 'opening_adjustment')
+            ->sum('amount');
+    
+        $cashRefunds = (clone $movements)
+            ->where('type', 'refund')
+            ->sum('amount');
+    
+        $paidOutExpenses = (clone $movements)
+            ->where('type', 'paid_out')
+            ->sum('amount');
+    
+        $cashDrops = (clone $movements)
+            ->where('type', 'cash_drop')
+            ->sum('amount');
+    
+        $expectedCash =
+            (float) $shift->opening_cash
+            + (float) $openingAdjustments
+            + (float) $cashPayments
+            - (float) $cashRefunds
+            - (float) $paidOutExpenses
+            - (float) $cashDrops;
+    
         return [
             'payments_count' => (clone $payments)->count(),
+    
             'cash_payments' => round((float) $cashPayments, 2),
             'card_payments' => round((float) $cardPayments, 2),
             'mobile_payments' => round((float) $mobilePayments, 2),
             'transfer_payments' => round((float) $transferPayments, 2),
             'total_payments' => round((float) $totalPayments, 2),
-            'expected_cash' => round((float) $shift->opening_cash + (float) $cashPayments, 2),
+    
+            'opening_adjustments' => round((float) $openingAdjustments, 2),
+            'cash_refunds' => round((float) $cashRefunds, 2),
+            'paid_out_expenses' => round((float) $paidOutExpenses, 2),
+            'cash_drops' => round((float) $cashDrops, 2),
+    
+            'expected_cash' => round((float) $expectedCash, 2),
         ];
     }
 }

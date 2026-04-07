@@ -32,4 +32,9 @@ class CashShift extends Model
     {
         return $this->hasMany(Payment::class, 'cash_shift_id');
     }
+
+    public function movements()
+{
+    return $this->hasMany(CashShiftMovement::class, 'cash_shift_id');
+}
 }
