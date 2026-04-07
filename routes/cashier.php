@@ -7,7 +7,7 @@ use App\Http\Controllers\Api\RefundRequestController as CashierRefundController;
 use App\Http\Controllers\Api\CashShiftController;
 use App\Http\Controllers\Api\CashShiftMovementController;
 use App\Http\Controllers\Api\CashierReportController;
-use App\Http\Controllers\Api\BillController as CashierReportController;
+// use App\Http\Controllers\Api\BillController as CashierReportController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
