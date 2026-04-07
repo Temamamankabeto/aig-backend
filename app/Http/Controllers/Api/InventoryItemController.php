@@ -33,7 +33,7 @@ class InventoryItemController extends Controller
         $data = $request->validate([
             'name' => 'required|string|max:255',
             'sku' => 'nullable|string|max:100|unique:inventory_items,sku',
-            'category' => 'required|in:food,beverage,consumable',
+            'category' => 'nullable|in:food,beverage,consumable',
             'unit' => 'required|string|max:50',
             'quantity' => 'nullable|numeric|min:0',
             'reorder_level' => 'nullable|numeric|min:0',

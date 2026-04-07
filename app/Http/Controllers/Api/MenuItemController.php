@@ -14,54 +14,68 @@ use Illuminate\Support\Str;
 class MenuItemController extends Controller
 {
     public function publicmenu(Request $request)
-    {
-        $search = trim((string) $request->query('search', ''));
-        $type = $request->query('type');
-        $categoryId = $request->query('category_id');
-        $menuMode = $request->query('menu_mode');
+{
+    $search = trim((string) $request->query('search', ''));
+    $type = $request->query('type');
+    $categoryId = $request->query('category_id');
+    $menuMode = $request->query('menu_mode');
 
-        $query = MenuItem::query()
-            ->with(['category:id,name,type'])
-            ->where('is_active', true)
-            ->where('is_available', true)
-            ->orderBy('name');
+    // Get pagination params from request (with defaults)
+    $perPage = (int) $request->query('per_page', 20);
+    $page = (int) $request->query('page', 1);
 
-        if ($search !== '') {
-            $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                    ->orWhere('description', 'like', "%{$search}%");
-            });
-        }
+    $query = MenuItem::query()
+        ->with(['category:id,name,type'])
+        ->where('is_active', true)
+        ->where('is_available', true)
+        ->orderBy('name');
 
-        if ($type && in_array($type, ['food', 'drink'], true)) {
-            $query->where('type', $type);
-        }
-
-        if ($categoryId && is_numeric($categoryId)) {
-            $query->where('category_id', (int) $categoryId);
-        }
-
-        if ($menuMode && in_array($menuMode, ['normal', 'spatial'], true)) {
-            $query->where('menu_mode', $menuMode);
-        }
-
-        $items = $query->get()->map(fn ($item) => $this->transformItem($item, true));
-
-        return response()->json([
-            'success' => true,
-            'data' => $items,
-            'meta' => [
-                'count' => $items->count(),
-                'filters' => [
-                    'search' => $search,
-                    'type' => $type,
-                    'category_id' => $categoryId,
-                    'menu_mode' => $menuMode,
-                ],
-            ],
-        ]);
+    // Apply filters
+    if ($search !== '') {
+        $query->where(function ($q) use ($search) {
+            $q->where('name', 'like', "%{$search}%")
+              ->orWhere('description', 'like', "%{$search}%");
+        });
     }
 
+    if ($type && in_array($type, ['food', 'drink'], true)) {
+        $query->where('type', $type);
+    }
+
+    if ($categoryId && is_numeric($categoryId)) {
+        $query->where('category_id', (int) $categoryId);
+    }
+
+    if ($menuMode && in_array($menuMode, ['normal', 'spatial'], true)) {
+        $query->where('menu_mode', $menuMode);
+    }
+
+    // Paginate results
+    $paginatedItems = $query->paginate($perPage, ['*'], 'page', $page);
+
+    // Transform items
+    $items = $paginatedItems->getCollection()->map(fn ($item) => $this->transformItem($item, true));
+
+    return response()->json([
+        'success' => true,
+        'data' => $items,
+        'meta' => [
+            'current_page' => $paginatedItems->currentPage(),
+            'per_page' => $paginatedItems->perPage(),
+            'total' => $paginatedItems->total(),
+            'last_page' => $paginatedItems->lastPage(),
+            'filters' => [
+                'search' => $search,
+                'type' => $type,
+                'category_id' => $categoryId,
+                'menu_mode' => $menuMode,
+            ],
+        ],
+    ]);
+}
+
+
+    
     public function publicCategories()
     {
         $categories = MenuCategory::query()
