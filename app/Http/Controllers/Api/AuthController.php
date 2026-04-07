@@ -8,7 +8,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
-
+use Illuminate\Support\Str;
 class AuthController extends Controller
 {
     /**
@@ -62,37 +62,60 @@ class AuthController extends Controller
     /**
      * Login user
      */
-    public function login(Request $request)
-    {
-        $request->validate([
-            'email' => ['required', 'email'],
-            'password' => ['required', 'string'],
-        ]);
+   public function login(Request $request)
+{
+    $request->validate([
+        'email' => ['required', 'email'],
+        'password' => ['required', 'string'],
+    ]);
 
-        $user = User::where('email', $request->email)->first();
+    $user = User::where('email', $request->email)->first();
 
-        if (!$user || !Hash::check($request->password, $user->password)) {
-            throw ValidationException::withMessages([
-                'email' => ['Invalid email or password.'],
-            ]);
-        }
-
-        $token = $user->createToken('aig-api-token')->plainTextToken;
-
-        return response()->json([
-            'success' => true,
-            'token' => $token,
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'phone' => $user->phone,
-                'address' => $user->address,
-            ],
-            'roles' => $user->getRoleNames()->values()->all(),
-            'permissions' => $user->getAllPermissions()->pluck('name')->values()->all(),
+    if (!$user || !Hash::check($request->password, $user->password)) {
+        throw ValidationException::withMessages([
+            'email' => ['Invalid email or password.'],
         ]);
     }
+
+    // ---------------- Access Token ----------------
+    $accessToken = $user->createToken('aig-api-token')->plainTextToken;
+
+    // ---------------- Refresh Token ----------------
+    $refreshToken = Str::random(64); // generate a secure random token
+
+    // Store refresh token in DB (or cache) with user_id
+    $user->update([
+        'refresh_token' => hash('sha256', $refreshToken),
+        'refresh_token_expires_at' => now()->addDays(30), // optional expiration
+    ]);
+
+    // ---------------- Cookie for Web ----------------
+   $cookie = cookie(
+    'refresh_token',         // Cookie name
+    $refreshToken,           // Value (plain token to send, hash in DB)
+    60 * 24 * 30,  // Expiration in minutes (e.g., 30 days = 60*24*30)
+    '/',                     // Path
+    null,                    // Domain (null = current domain; good for localhost/mobile)
+    false,                 // Secure (true for HTTPS production, false for local/dev)
+    true                     // HttpOnly (prevents JS access)
+)->withSameSite('Lax');     // SameSite policy (safe default for dev/mobile)
+
+    // ---------------- JSON Response ----------------
+    return response()->json([
+        'success' => true,
+        'token' => $accessToken,
+        'refresh_token' => $refreshToken, // optional in JSON, mobile apps need it
+        'user' => [
+            'id' => $user->id,
+            'name' => $user->name,
+            'email' => $user->email,
+            'phone' => $user->phone,
+            'address' => $user->address,
+        ],
+        'roles' => $user->getRoleNames()->values()->all(),
+        'permissions' => $user->getAllPermissions()->pluck('name')->values()->all(),
+    ])->cookie($cookie);
+}
 
     /**
      * Get authenticated user
