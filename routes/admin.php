@@ -55,24 +55,22 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
     });
 
     // Menu Items
-    Route::prefix('menu/items')->group(function () {
-        Route::get('/', [MenuItemController::class, 'index']);
-        Route::get('/{id}', [MenuItemController::class, 'show']);
-        Route::post('/', [MenuItemController::class, 'store']);
+Route::get('/menu/items', [MenuItemController::class, 'index']);
+Route::get('/menu/items/{id}', [MenuItemController::class, 'show']);
+Route::post('/menu/items', [MenuItemController::class, 'store']);
 
-        // normal JSON update
-        Route::put('/{id}', [MenuItemController::class, 'update']);
-        Route::patch('/{id}', [MenuItemController::class, 'update']);
+Route::put('/menu/items/{id}', [MenuItemController::class, 'update']);
+Route::patch('/menu/items/{id}', [MenuItemController::class, 'update']);
 
-        // form-data update fallback for file upload
-        Route::post('/{id}', [MenuItemController::class, 'update']);
+// form-data fallback update (image upload support)
+Route::post('/menu/items/{id}', [MenuItemController::class, 'update']);
 
-        Route::patch('/{id}/toggle', [MenuItemController::class, 'toggleActive']);
-        Route::patch('/{id}/availability', [MenuItemController::class, 'setAvailability']);
-        Route::patch('/{id}/spatial', [MenuItemController::class, 'setSpatial']);
-        Route::patch('/{id}/normal', [MenuItemController::class, 'setNormal']);
-        Route::post('/{id}/image', [MenuItemController::class, 'uploadImage']);
-    });
+Route::patch('/menu/items/{id}/toggle', [MenuItemController::class, 'toggleActive']);
+Route::patch('/menu/items/{id}/availability', [MenuItemController::class, 'setAvailability']);
+Route::patch('/menu/items/{id}/spatial', [MenuItemController::class, 'setSpatial']);
+Route::patch('/menu/items/{id}/normal', [MenuItemController::class, 'setNormal']);
+
+Route::post('/menu/items/{id}/image', [MenuItemController::class, 'uploadImage']);
 
     // Roles
     Route::get('/roles', [RoleController::class, 'index']);

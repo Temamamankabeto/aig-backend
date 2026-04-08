@@ -22,41 +22,43 @@ class UpdateMenuItemRequest extends FormRequest
         $merged = [];
 
         foreach (['is_active', 'is_available', 'is_featured', 'remove_image'] as $field) {
-            if ($this->exists($field)) {
+            if ($this->has($field)) {
                 $merged[$field] = $this->normalizeBoolean($this->input($field));
             }
         }
 
-        if ($this->exists('category_id') && $this->input('category_id') !== '') {
+        if ($this->has('category_id') && $this->input('category_id') !== '') {
             $merged['category_id'] = (int) $this->input('category_id');
         }
 
-        if ($this->exists('price') && $this->input('price') !== '') {
+        if ($this->has('price') && $this->input('price') !== '') {
             $merged['price'] = (float) $this->input('price');
         }
 
-        if ($this->exists('prep_minutes') && $this->input('prep_minutes') !== '') {
-            $merged['prep_minutes'] = (int) $this->input('prep_minutes');
+        if ($this->has('prep_minutes')) {
+            $merged['prep_minutes'] = $this->input('prep_minutes') === ''
+                ? null
+                : (int) $this->input('prep_minutes');
         }
 
-        if ($this->exists('name') && is_string($this->input('name'))) {
+        if ($this->has('name') && is_string($this->input('name'))) {
             $merged['name'] = trim($this->input('name'));
         }
 
-        if ($this->exists('description')) {
-            $merged['description'] = $this->input('description') === '' ? null : $this->input('description');
+        if ($this->has('description')) {
+            $merged['description'] = $this->input('description') === ''
+                ? null
+                : $this->input('description');
         }
 
-        if ($this->exists('menu_mode') && $this->input('menu_mode') === '') {
-            $merged['menu_mode'] = null;
+        if ($this->has('menu_mode')) {
+            $merged['menu_mode'] = $this->input('menu_mode') === ''
+                ? null
+                : $this->input('menu_mode');
         }
 
-        if ($this->exists('modifiers') && $this->input('modifiers') === '') {
+        if ($this->has('modifiers') && $this->input('modifiers') === '') {
             $merged['modifiers'] = null;
-        }
-
-        if ($this->exists('prep_minutes') && $this->input('prep_minutes') === '') {
-            $merged['prep_minutes'] = null;
         }
 
         if (!empty($merged)) {
@@ -67,23 +69,23 @@ class UpdateMenuItemRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'category_id'   => ['sometimes', 'required', 'integer', 'exists:menu_categories,id'],
-            'name'          => ['sometimes', 'required', 'string', 'max:255'],
-            'description'   => ['sometimes', 'nullable', 'string'],
-            'type'          => ['sometimes', 'required', Rule::in(['food', 'drink'])],
-            'price'         => ['sometimes', 'required', 'numeric', 'min:0'],
-            'image'         => ['sometimes', 'nullable', 'image', 'mimes:jpg,jpeg,png,webp,gif', 'max:4096'],
-            'is_available'  => ['sometimes', 'boolean'],
-            'is_active'     => ['sometimes', 'boolean'],
-            'is_featured'   => ['sometimes', 'boolean'],
-            'menu_mode'     => ['sometimes', 'nullable', Rule::in(['normal', 'spatial'])],
-            'modifiers'     => ['sometimes', 'nullable'],
-            'prep_minutes'  => ['sometimes', 'nullable', 'integer', 'min:0'],
-            'remove_image'  => ['sometimes', 'boolean'],
+            'category_id'  => ['sometimes', 'required', 'integer', 'exists:menu_categories,id'],
+            'name'         => ['sometimes', 'required', 'string', 'max:255'],
+            'description'  => ['sometimes', 'nullable', 'string'],
+            'type'         => ['sometimes', 'required', Rule::in(['food', 'drink'])],
+            'price'        => ['sometimes', 'required', 'numeric', 'min:0'],
+            'image'        => ['sometimes', 'nullable', 'image', 'mimes:jpg,jpeg,png,webp,gif', 'max:4096'],
+            'is_available' => ['sometimes', 'nullable', 'boolean'],
+            'is_active'    => ['sometimes', 'nullable', 'boolean'],
+            'is_featured'  => ['sometimes', 'nullable', 'boolean'],
+            'menu_mode'    => ['sometimes', 'nullable', Rule::in(['normal', 'spatial'])],
+            'modifiers'    => ['sometimes', 'nullable'],
+            'prep_minutes' => ['sometimes', 'nullable', 'integer', 'min:0'],
+            'remove_image' => ['sometimes', 'nullable', 'boolean'],
         ];
     }
 
-    protected function validationData(): array
+    public function validationData(): array
     {
         return $this->all();
     }
