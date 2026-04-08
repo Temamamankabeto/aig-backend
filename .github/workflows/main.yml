@@ -9,20 +9,54 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3
- 
+        uses: actions/checkout@v4
+
+      - name: Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+
       - name: Execute Remote SSH Commands
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT }}
+          timeout: 300s
+          command_timeout: 60s
           script: |
             cd ${{ secrets.REMOTE_PATH }}
+            
+            # Backup current version
+            if [ -d "storage/app/backups" ]; then
+              tar -czf storage/app/backups/backup-$(date +%Y%m%d-%H%M%S).tar.gz --exclude=storage/app/backups .
+            fi
+            
+            # Pull latest changes
             git pull origin main
+            
+            # Install dependencies
             composer install --no-interaction --prefer-dist --optimize-autoloader
+            
+            # Run migrations (only if needed)
             php artisan migrate --force
+            
+            # Clear and cache configurations
+            php artisan config:clear
             php artisan config:cache
+            php artisan route:clear
             php artisan route:cache
+            php artisan view:clear
             php artisan view:cache
+            
+            # Set proper permissions
+            chmod -R 755 storage
+            chmod -R 755 bootstrap/cache
+            
+            # Optimize for production
+            php artisan optimize
+            
+            echo "Deployment completed successfully!"
