@@ -14,68 +14,67 @@ use Illuminate\Support\Str;
 class MenuItemController extends Controller
 {
     public function publicmenu(Request $request)
-{
-    $search = trim((string) $request->query('search', ''));
-    $type = $request->query('type');
-    $categoryId = $request->query('category_id');
-    $menuMode = $request->query('menu_mode');
+    {
+        $search = trim((string) $request->query('search', ''));
+        $type = $request->query('type');
+        $categoryId = $request->query('category_id');
+        $menuMode = $request->query('menu_mode');
 
-    // Get pagination params from request (with defaults)
-    $perPage = (int) $request->query('per_page', 20);
-    $page = (int) $request->query('page', 1);
+        $perPage = (int) $request->query('per_page', 20);
+        $perPage = max(1, min($perPage, 100));
 
-    $query = MenuItem::query()
-        ->with(['category:id,name,type'])
-        ->where('is_active', true)
-        ->where('is_available', true)
-        ->orderBy('name');
+        $page = (int) $request->query('page', 1);
+        $page = max(1, $page);
 
-    // Apply filters
-    if ($search !== '') {
-        $query->where(function ($q) use ($search) {
-            $q->where('name', 'like', "%{$search}%")
-              ->orWhere('description', 'like', "%{$search}%");
-        });
-    }
+        $query = MenuItem::query()
+            ->with(['category:id,name,type'])
+            ->where('is_active', true)
+            ->where('is_available', true)
+            ->orderBy('name');
 
-    if ($type && in_array($type, ['food', 'drink'], true)) {
-        $query->where('type', $type);
-    }
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%");
+            });
+        }
 
-    if ($categoryId && is_numeric($categoryId)) {
-        $query->where('category_id', (int) $categoryId);
-    }
+        if ($type && in_array($type, ['food', 'drink'], true)) {
+            $query->where('type', $type);
+        }
 
-    if ($menuMode && in_array($menuMode, ['normal', 'spatial'], true)) {
-        $query->where('menu_mode', $menuMode);
-    }
+        if ($categoryId && is_numeric($categoryId)) {
+            $query->where('category_id', (int) $categoryId);
+        }
 
-    // Paginate results
-    $paginatedItems = $query->paginate($perPage, ['*'], 'page', $page);
+        if ($menuMode && in_array($menuMode, ['normal', 'spatial'], true)) {
+            $query->where('menu_mode', $menuMode);
+        }
 
-    // Transform items
-    $items = $paginatedItems->getCollection()->map(fn ($item) => $this->transformItem($item, true));
+        $paginatedItems = $query->paginate($perPage, ['*'], 'page', $page);
 
-    return response()->json([
-        'success' => true,
-        'data' => $items,
-        'meta' => [
-            'current_page' => $paginatedItems->currentPage(),
-            'per_page' => $paginatedItems->perPage(),
-            'total' => $paginatedItems->total(),
-            'last_page' => $paginatedItems->lastPage(),
-            'filters' => [
-                'search' => $search,
-                'type' => $type,
-                'category_id' => $categoryId,
-                'menu_mode' => $menuMode,
+        $items = $paginatedItems->getCollection()
+            ->map(fn ($item) => $this->transformItem($item, true))
+            ->values();
+
+        return response()->json([
+            'success' => true,
+            'data' => $items,
+            'meta' => [
+                'current_page' => $paginatedItems->currentPage(),
+                'per_page' => $paginatedItems->perPage(),
+                'total' => $paginatedItems->total(),
+                'last_page' => $paginatedItems->lastPage(),
+                'filters' => [
+                    'search' => $search,
+                    'type' => $type,
+                    'category_id' => $categoryId,
+                    'menu_mode' => $menuMode,
+                ],
             ],
-        ],
-    ]);
-}
+        ]);
+    }
 
-
-    
     public function publicCategories()
     {
         $categories = MenuCategory::query()
@@ -112,6 +111,7 @@ class MenuItemController extends Controller
 
         if ($request->filled('q')) {
             $term = trim((string) $request->query('q'));
+
             if ($term !== '') {
                 $q->where(function ($qq) use ($term) {
                     $qq->where('name', 'like', "%{$term}%")
@@ -120,7 +120,9 @@ class MenuItemController extends Controller
             }
         }
 
-        $items = $q->get()->map(fn ($it) => $this->transformItem($it, false));
+        $items = $q->get()
+            ->map(fn ($it) => $this->transformItem($it, false))
+            ->values();
 
         return response()->json([
             'success' => true,
@@ -145,6 +147,7 @@ class MenuItemController extends Controller
 
         if ($request->filled('search')) {
             $term = trim((string) $request->query('search'));
+
             if ($term !== '') {
                 $q->where(function ($qq) use ($term) {
                     $qq->where('name', 'like', "%{$term}%")
@@ -182,7 +185,9 @@ class MenuItemController extends Controller
 
         $page = $q->orderByDesc('id')->paginate($perPage);
 
-        $items = collect($page->items())->map(fn ($item) => $this->transformItem($item, true));
+        $items = collect($page->items())
+            ->map(fn ($item) => $this->transformItem($item, true))
+            ->values();
 
         return response()->json([
             'success' => true,
@@ -247,8 +252,11 @@ class MenuItemController extends Controller
 
         $data = $this->normalizePayload($request->validated());
 
-        if (!empty($data['remove_image']) && $item->image_path) {
-            Storage::disk('public')->delete($item->image_path);
+        if (array_key_exists('remove_image', $data) && $data['remove_image'] === true) {
+            if ($item->image_path) {
+                Storage::disk('public')->delete($item->image_path);
+            }
+
             $data['image_path'] = null;
         }
 
@@ -262,7 +270,8 @@ class MenuItemController extends Controller
             $data['image_path'] = $this->storeImage($request->file('image'), $item->id);
         }
 
-        $item->update($data);
+        $item->fill($data);
+        $item->save();
         $item->load('category');
 
         return response()->json([
@@ -361,16 +370,18 @@ class MenuItemController extends Controller
     {
         foreach (['is_available', 'is_active', 'is_featured', 'remove_image'] as $field) {
             if (array_key_exists($field, $data)) {
-                $data[$field] = filter_var($data[$field], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? false;
+                $data[$field] = filter_var($data[$field], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
             }
         }
 
-        if (array_key_exists('price', $data)) {
+        if (array_key_exists('price', $data) && $data['price'] !== null && $data['price'] !== '') {
             $data['price'] = (float) $data['price'];
         }
 
-        if (array_key_exists('prep_minutes', $data) && $data['prep_minutes'] !== null && $data['prep_minutes'] !== '') {
-            $data['prep_minutes'] = (int) $data['prep_minutes'];
+        if (array_key_exists('prep_minutes', $data)) {
+            $data['prep_minutes'] = ($data['prep_minutes'] === null || $data['prep_minutes'] === '')
+                ? null
+                : (int) $data['prep_minutes'];
         }
 
         if (array_key_exists('modifiers', $data) && is_string($data['modifiers'])) {
