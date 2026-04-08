@@ -6,33 +6,34 @@ return [
     |--------------------------------------------------------------------------
     | Cross-Origin Resource Sharing (CORS) Configuration
     |--------------------------------------------------------------------------
+    |
+    | Configure your settings for cross-origin requests (CORS).
+    | These determine what operations may be executed in browsers.
+    |
     */
 
     'paths' => ['api/*', 'sanctum/csrf-cookie'],
 
-    'allowed_methods' => ['*'],
+    'allowed_methods' => ['*'], // Allow all HTTP methods (GET, POST, etc.)
 
     'allowed_origins' => [
         'http://localhost:3000',
-        'http://127.0.0.1:3000',
-        'http://172.25.20.102:3000',
-        'http://172.18.112.1:8000',
-        'https://cafeaig.vercel.app',
         'http://192.168.2.1:3000',
+        'http://192.168.2.1:3000'
     ],
 
-    'allowed_origins_patterns' => [
-        'http://*:*',
-        'https://*:*',
+    'allowed_origins_patterns' => [],
+
+    'allowed_headers' => ['*'], // Allow all headers (e.g., Content-Type, X-XSRF-TOKEN)
+
+    'exposed_headers' => [
+        'Authorization',
+        'X-CSRF-TOKEN',
+        'X-Requested-With',
     ],
 
-    'allowed_headers' => ['*'],
+    'max_age' => 3600, // Cache preflight responses for 1 hour
 
-    'exposed_headers' => [],
-
-    'max_age' => 0,
-
-
-    'supports_credentials' => true,
+    'supports_credentials' => true, // Required for cookie-based auth like Laravel Sanctum
 
 ];

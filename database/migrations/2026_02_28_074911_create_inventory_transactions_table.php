@@ -10,23 +10,32 @@ return new class extends Migration {
         Schema::create('inventory_transactions', function (Blueprint $table) {
             $table->id();
 
-            $table->foreignId('inventory_item_id')->constrained('inventory_items')->cascadeOnDelete();
+            $table->foreignId('inventory_item_id')
+                ->constrained('inventory_items')
+                ->cascadeOnDelete();
 
             $table->enum('type', ['in', 'out', 'adjust']);
-            $table->decimal('quantity', 12, 3); // positive number
-            $table->decimal('unit_cost', 10, 2)->nullable();
 
-            $table->string('reference_type')->nullable(); // order, purchase, manual
+            $table->decimal('quantity', 12, 3);
+            $table->decimal('unit_cost', 12, 3)->nullable();
+
+            $table->decimal('before_quantity', 12, 3)->nullable();
+            $table->decimal('after_quantity', 12, 3)->nullable();
+
+            $table->string('reference_type')->nullable();
             $table->unsignedBigInteger('reference_id')->nullable();
 
-            $table->text('reason')->nullable();
-            $table->foreignId('created_by')->constrained('users')->cascadeOnDelete();
+            $table->text('note')->nullable();
 
-            $table->timestamp('created_at')->useCurrent();
-            $table->timestamp('updated_at')->useCurrent();
+            $table->foreignId('created_by')
+                ->nullable()
+                ->constrained('users')
+                ->nullOnDelete();
 
-            $table->index(['type']);
-            $table->index(['reference_type', 'reference_id']);
+            $table->timestamps();
+
+            // ✅ Soft delete column
+            $table->softDeletes();
         });
     }
 

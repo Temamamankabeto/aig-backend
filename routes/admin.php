@@ -45,7 +45,7 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
     Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
 
     Route::get('/menu/categories', [MenuCategoryController::class, 'index']);
-
+    Route::patch('/menu/categories/{id}/toggle', [MenuCategoryController::class, 'toggle']);
     Route::get('/menu/items', [MenuItemController::class, 'index']);
     Route::get('/menu/items/{id}', [MenuItemController::class, 'show']);
     

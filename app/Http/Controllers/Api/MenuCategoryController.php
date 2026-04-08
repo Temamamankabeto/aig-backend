@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Authz\StoreMenuCategoryRequest;
 use App\Http\Requests\Authz\UpdateMenuCategoryRequest;
 use App\Models\MenuCategory;
-use App\Models\MenuItem;
 use Illuminate\Http\Request;
 
 class MenuCategoryController extends Controller
@@ -20,7 +19,9 @@ class MenuCategoryController extends Controller
         $active = $request->query('active');
         $perPage = max(5, min((int) $request->query('per_page', 10), 100));
 
-        $q = MenuCategory::query()->orderBy('sort_order')->orderBy('name');
+        $q = MenuCategory::query()
+            ->orderBy('sort_order')
+            ->orderBy('name');
 
         if ($search !== '') {
             $q->where('name', 'like', "%{$search}%");
@@ -53,12 +54,16 @@ class MenuCategoryController extends Controller
         $cat = MenuCategory::findOrFail($id);
         $this->authorize('view', $cat);
 
-        return response()->json(['success' => true, 'data' => $cat]);
+        return response()->json([
+            'success' => true,
+            'data' => $cat,
+        ]);
     }
 
     public function store(StoreMenuCategoryRequest $request)
     {
         $this->authorize('create', MenuCategory::class);
+
         $data = $request->validated();
 
         $cat = MenuCategory::create([
@@ -80,6 +85,7 @@ class MenuCategoryController extends Controller
     {
         $cat = MenuCategory::findOrFail($id);
         $this->authorize('update', $cat);
+
         $data = $request->validated();
 
         $cat->update([
@@ -97,17 +103,18 @@ class MenuCategoryController extends Controller
         ]);
     }
 
-    public function toggleActive($id)
+    public function toggle($id)
     {
         $cat = MenuCategory::findOrFail($id);
-        $this->authorize('toggleActive', $cat);
+        $this->authorize('update', $cat);
+
         $cat->is_active = ! $cat->is_active;
         $cat->save();
 
         return response()->json([
             'success' => true,
-            'message' => 'Status updated',
-            'data' => $cat,
+            'message' => 'Category status updated successfully',
+            'data' => $cat->fresh(),
         ]);
     }
 
@@ -115,7 +122,11 @@ class MenuCategoryController extends Controller
     {
         $type = $request->query('type');
 
-        $q = MenuCategory::query()->where('is_active', true)->orderBy('sort_order')->orderBy('name');
+        $q = MenuCategory::query()
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('name');
+
         if (in_array($type, ['food', 'drink'], true)) {
             $q->where('type', $type);
         }
@@ -124,17 +135,5 @@ class MenuCategoryController extends Controller
             'success' => true,
             'data' => $q->get(['id', 'name', 'type', 'icon', 'sort_order', 'is_active']),
         ]);
-    }
-
-    public function setAvailability(Request $request, $id)
-    {
-        $row = MenuItem::findOrFail($id);
-        $this->authorize('setAvailability', MenuCategory::class);
-
-        $data = $request->validate(['is_available' => 'required|boolean']);
-        $row->is_available = $data['is_available'];
-        $row->save();
-
-        return response()->json(['success' => true, 'data' => $row]);
     }
 }
