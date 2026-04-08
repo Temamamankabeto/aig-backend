@@ -13,43 +13,53 @@ class PermissionController extends Controller
     public function index(Request $request)
     {
         $this->authorize('viewAny', Permission::class);
+    
         $search = trim((string) $request->query('search', ''));
         $perPage = (int) $request->query('per_page', 10);
         $all = $request->boolean('all');
-
+    
         if ($perPage <= 0) {
             $perPage = 10;
         }
-
+    
         if ($perPage > 100) {
             $perPage = 100;
         }
-
+    
         $q = Permission::query()
             ->where('guard_name', 'sanctum')
             ->orderBy('name');
-
+    
         if ($search !== '') {
             $q->where('name', 'like', "%{$search}%");
         }
-
+    
+        $columns = ['id', 'name', 'guard_name', 'created_at', 'updated_at'];
+    
         if ($all) {
-            $permissions = $q->get(['id', 'name', 'guard_name', 'created_at', 'updated_at']);
-
+            $permissions = $q->get($columns);
+    
             return response()->json([
-                'success' => true,
                 'data' => $permissions,
+                'meta' => [
+                    'current_page' => 1,
+                    'per_page' => $permissions->count(),
+                    'total' => $permissions->count(),
+                    'last_page' => 1,
+                ],
             ]);
         }
-
-        $permissions = $q->paginate(
-            $perPage,
-            ['id', 'name', 'guard_name', 'created_at', 'updated_at']
-        );
-
+    
+        $permissions = $q->paginate($perPage, $columns);
+    
         return response()->json([
-            'success' => true,
-            'data' => $permissions,
+            'data' => $permissions->items(),
+            'meta' => [
+                'current_page' => $permissions->currentPage(),
+                'per_page' => $permissions->perPage(),
+                'total' => $permissions->total(),
+                'last_page' => $permissions->lastPage(),
+            ],
         ]);
     }
 
