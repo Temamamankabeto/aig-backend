@@ -87,7 +87,7 @@ class RolesPermissionsSeeder extends Seeder
             'inventory.update',
             'inventory.adjust',
             'inventory.alerts.read',
-
+            'inventory.destroy',
             // Recipes (F&B)
             'recipes.read',
             'recipes.create',
