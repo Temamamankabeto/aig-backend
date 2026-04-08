@@ -118,6 +118,19 @@ class MenuCategoryController extends Controller
         ]);
     }
 
+    public function destroy($id)
+    {
+        $cat = MenuCategory::findOrFail($id);
+        $this->authorize('delete', $cat);
+
+        $cat->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Category deleted successfully',
+        ]);
+    }
+
     public function publicIndex(Request $request)
     {
         $type = $request->query('type');
