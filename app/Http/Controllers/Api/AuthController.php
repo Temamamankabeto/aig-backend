@@ -22,7 +22,6 @@ class AuthController extends Controller
             'phone' => ['required', 'string', 'max:20'],
             'password' => ['required', 'confirmed', 'min:8'],
             'address' => ['nullable', 'string', 'max:500'],
-            'role' => ['nullable', 'string', 'exists:roles,name'],
         ]);
 
         if ($validator->fails()) {
@@ -40,9 +39,7 @@ class AuthController extends Controller
             'password' => Hash::make($request->password),
         ]);
 
-        // Assign role - use provided role or default to 'customer'
-        $role = $request->role ?? 'customer';
-        $user->assignRole($role);
+        $user->assignRole('customer');
 
         $token = $user->createToken('aig-api-token')->plainTextToken;
 

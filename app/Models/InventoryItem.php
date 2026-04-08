@@ -4,24 +4,19 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\SoftDeletes;
 
 class InventoryItem extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory;
 
     protected $fillable = [
-        'name', 'sku', 'category', 'unit',
-        'quantity', 'reorder_level', 'unit_cost',
-        'expiry_date', 'is_active',
+        'name', 'unit', 'minimum_quantity', 'current_stock', 'average_purchase_price',
     ];
 
     protected $casts = [
-        'quantity' => 'decimal:3',
-        'reorder_level' => 'decimal:3',
-        'unit_cost' => 'decimal:2',
-        'expiry_date' => 'date',
-        'is_active' => 'boolean',
+        'minimum_quantity' => 'decimal:3',
+        'current_stock' => 'decimal:3',
+        'average_purchase_price' => 'decimal:3',
     ];
 
     public function transactions()
