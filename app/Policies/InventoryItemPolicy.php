@@ -14,7 +14,7 @@ class InventoryItemPolicy
     public function view(User $user, InventoryItem $model): bool { return $this->allows($user, 'inventory.read'); }
     public function create(User $user): bool { return $this->allows($user, 'inventory.create'); }
     public function update(User $user, InventoryItem $model): bool { return $this->allows($user, 'inventory.update'); }
+    public function destroy(User $user, InventoryItem $model): bool { return $this->allows($user, 'inventory.destroy'); }
 
-    public function create(User $user): bool { return $this->allows($user, 'inventory.create'); }
-    public function update(User $user, InventoryItem $model): bool { return $this->allows($user, 'inventory.update'); }
+    
 }
