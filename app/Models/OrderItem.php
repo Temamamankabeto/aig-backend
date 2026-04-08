@@ -9,7 +9,7 @@ class OrderItem extends Model
     protected $fillable = [
         'order_id','menu_item_id','quantity','unit_price','line_total',
         'station','item_status','notes','modifiers',
-        'started_at','ready_at','served_at'
+        'started_at','ready_at','served_at','inventory_deducted_at'
     ];
 
     
@@ -21,6 +21,7 @@ class OrderItem extends Model
    'started_at' => 'datetime',
    'ready_at' => 'datetime',
    'served_at' => 'datetime',
+   'inventory_deducted_at' => 'datetime',
    ];
 
     public function order()
