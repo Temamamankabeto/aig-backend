@@ -1,4 +1,4 @@
-<?php
+<?php 
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
@@ -11,22 +11,20 @@ return new class extends Migration {
             $table->id();
 
             $table->string('name');
-            $table->string('sku')->unique();
 
-            $table->enum('category', ['food','beverage','consumable'])->default('food');
-            $table->string('unit');                  // kg, liter, pcs
-            $table->decimal('quantity', 12, 3)->default(0);
-            $table->decimal('reorder_level', 12, 3)->default(0);
-            $table->decimal('unit_cost', 10, 2)->default(0);
+            $table->string('unit'); // kg, liter, pcs
 
-            $table->date('expiry_date')->nullable();
-            $table->boolean('is_active')->default(true);
+            $table->decimal('minimum_quantity', 12, 3)->default(0);
+
+            $table->decimal('current_stock', 12, 3)->nullable();
+
+            // FIX: remove space from column name
+            $table->decimal('average_purchase_price', 12, 3)->nullable();
 
             $table->timestamps();
 
-            $table->index(['is_active']);
-            $table->index(['category','is_active']);
-
+            // ADD THIS
+            $table->softDeletes();
         });
     }
 

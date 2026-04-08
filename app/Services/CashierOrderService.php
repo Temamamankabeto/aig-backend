@@ -12,11 +12,10 @@ use App\Models\OrderItem;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
-class WaiterOrderService
+class CashierOrderService
 {
     public function __construct(
-        private OrderNumberService $orderNumberService,
-        private InventoryDeductionService $inventoryDeductionService
+        private OrderNumberService $orderNumberService
     ) {
     }
 
@@ -59,7 +58,7 @@ class WaiterOrderService
                     'unit_price' => $unitPrice,
                     'line_total' => $lineTotal,
                     'station' => $menuItem->type === 'food' ? 'kitchen' : 'bar',
-                    'item_status' => 'confirmed',
+                    'item_status' => 'pending',
                     'notes' => is_string($itemNote) ? (trim($itemNote) ?: null) : null,
                     'modifiers' => is_array($itemModifiers) ? $itemModifiers : null,
                 ];
@@ -68,24 +67,6 @@ class WaiterOrderService
             if (empty($preparedItems)) {
                 throw new RuntimeException('At least one valid order item is required.');
             }
-
-            $subtotal = round($subtotal, 2);
-            $tax = round($subtotal * 0.10, 2);
-            $serviceCharge = round($subtotal * 0.05, 2);
-            $discount = round((float) ($data['discount'] ?? 0), 2);
-
-            if ($discount < 0) {
-                $discount = 0;
-            }
-
-            $total = round(($subtotal + $tax + $serviceCharge) - $discount, 2);
-
-            if ($total < 0) {
-                $total = 0;
-            }
-
-            $source = (string) ($data['_source'] ?? 'waiter');
-            $isCashierOrder = $source === 'cashier';
 
             $orderType = (string) ($data['order_type'] ?? 'dine_in');
             $tableId = $orderType === 'dine_in'
@@ -104,6 +85,11 @@ class WaiterOrderService
                 throw new RuntimeException('Customer address is required for delivery orders.');
             }
 
+            $waiterId = !empty($data['waiter_id']) ? (int) $data['waiter_id'] : null;
+            if (!$waiterId) {
+                throw new RuntimeException('Waiter is required for cashier order entry.');
+            }
+
             if ($orderType === 'dine_in' && $tableId) {
                 DiningTable::query()
                     ->where('id', $tableId)
@@ -112,9 +98,20 @@ class WaiterOrderService
                     ->firstOrFail();
             }
 
-            $orderStatus = $isCashierOrder ? 'confirmed' : 'pending';
-            $billStatus = 'issued';
-            $issuedAt = null;
+            $subtotal = round($subtotal, 2);
+            $tax = round($subtotal * 0.10, 2);
+            $serviceCharge = round($subtotal * 0.05, 2);
+            $discount = round((float) ($data['discount'] ?? 0), 2);
+
+            if ($discount < 0) {
+                $discount = 0;
+            }
+
+            $total = round(($subtotal + $tax + $serviceCharge) - $discount, 2);
+
+            if ($total < 0) {
+                $total = 0;
+            }
 
             $customerName = isset($data['customer_name'])
                 ? (trim((string) $data['customer_name']) ?: 'Guest')
@@ -132,10 +129,6 @@ class WaiterOrderService
                 ? (trim((string) $data['notes']) ?: null)
                 : null;
 
-            $waiterId = !empty($data['waiter_id'])
-                ? (int) $data['waiter_id']
-                : $authUserId;
-
             $order = Order::create([
                 'order_number' => $orderNumber,
                 'order_type' => $orderType,
@@ -145,7 +138,7 @@ class WaiterOrderService
                 'customer_name' => $customerName,
                 'customer_phone' => $customerPhone,
                 'customer_address' => $customerAddress,
-                'status' => $orderStatus,
+                'status' => 'pending',
                 'subtotal' => $subtotal,
                 'tax' => $tax,
                 'service_charge' => $serviceCharge,
@@ -160,19 +153,15 @@ class WaiterOrderService
 
                 $orderItem = OrderItem::create($itemData);
 
-                if ($orderItem->item_status === 'confirmed') {
-                    $this->inventoryDeductionService->deductForOrderItem($orderItem, $authUserId);
-                }
-
                 if ($orderItem->station === 'kitchen') {
                     KitchenTicket::create([
                         'order_item_id' => $orderItem->id,
-                        'status' => 'confirmed',
+                        'status' => 'pending',
                     ]);
                 } else {
                     BarTicket::create([
                         'order_item_id' => $orderItem->id,
-                        'status' => 'confirmed',
+                        'status' => 'pending',
                     ]);
                 }
             }
@@ -187,8 +176,8 @@ class WaiterOrderService
                 'total' => $total,
                 'paid_amount' => 0,
                 'balance' => $total,
-                'status' => $billStatus,
-                'issued_at' => $issuedAt,
+                'status' => 'draft',
+                'issued_at' => null,
             ]);
 
             if ($orderType === 'dine_in' && !empty($tableId)) {

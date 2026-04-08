@@ -39,6 +39,8 @@ protected $fillable=[
         return $this->hasMany(Order::class, 'created_by');
     }
 
+
+
     // Orders served/managed by waiter
     public function waiterOrders()
     {

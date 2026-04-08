@@ -45,7 +45,7 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
     Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
 
     Route::get('/menu/categories', [MenuCategoryController::class, 'index']);
-
+    Route::patch('/menu/categories/{id}/toggle', [MenuCategoryController::class, 'toggle']);
     Route::get('/menu/items', [MenuItemController::class, 'index']);
     Route::get('/menu/items/{id}', [MenuItemController::class, 'show']);
     
@@ -67,10 +67,10 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
     Route::put('/roles/{id}', [RoleController::class, 'update']);
     Route::post('/roles/{id}/permissions', [RoleController::class, 'assignPermissions']);
 
+    Route::get('/users/roles-lite', [UserController::class, 'rolesLite']);
+    Route::get('/users/waiters-lite', [UserController::class, 'waitersLite']);
     Route::get('/users', [UserController::class, 'index']);
     Route::get('/users/{id}', [UserController::class, 'show']);
-    Route::get('/roles-lite', [UserController::class, 'rolesLite']);
-    Route::get('/waiters-lite', [UserController::class, 'waitersLite']);
     Route::post('/users', [UserController::class, 'store']);
     Route::put('/users/{id}', [UserController::class, 'update']);
     Route::patch('/users/{id}/toggle', [UserController::class, 'toggle']);

@@ -17,6 +17,11 @@ use Illuminate\Support\Str;
 
 class OrderController extends Controller
 {
+    public function __construct(
+        private InventoryDeductionService $inventoryDeductionService
+    ) {
+    }
+
     /**
      * List orders with filters (for staff)
      */
@@ -450,6 +455,10 @@ class OrderController extends Controller
             }
 
             $orderItem->save();
+
+            if ($request->status === 'confirmed') {
+                $this->inventoryDeductionService->deductForOrderItem($orderItem->fresh(), (int) auth()->id());
+            }
 
             // Update corresponding ticket
             if ($request->station === 'kitchen') {

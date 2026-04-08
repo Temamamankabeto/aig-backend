@@ -1045,10 +1045,14 @@ $order->update([
 
 $this->auditLogger->log(request(), auth()->id(), 'Order', $order->id, 'order_confirmed', null, $order->toArray(), 'Order confirmed by waiter.');
 
-// Update order items status
-OrderItem::where('order_id', $order->id)->update([
+// Update order items status and deduct inventory once per confirmed item
+$orderItems = OrderItem::where('order_id', $order->id)->lockForUpdate()->get();
+foreach ($orderItems as $orderItem) {
+$orderItem->update([
 'item_status' => 'confirmed',
 ]);
+$this->inventoryDeductionService->deductForOrderItem($orderItem->fresh(), (int) auth()->id());
+}
 
 // Update bill/payment status
 if ($order->bill) {
