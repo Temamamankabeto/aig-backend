@@ -27,7 +27,7 @@ jobs:
             echo "SSH_HOST secret is not set"
           fi 
 
-      - name: Setup SSH Key
+      - name: Setup SSH Key 
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_KEY }}" > ~/.ssh/deploy_key
