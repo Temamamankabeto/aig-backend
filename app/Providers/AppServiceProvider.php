@@ -12,17 +12,20 @@ class AppServiceProvider extends ServiceProvider
         //
     }
 
-    public function boot(): void
-    {
-        // Comprehensive MySQL configuration fixes
-        Schema::defaultStringLength(191);
-        
-        // Set default string length for all database connections
-        \Illuminate\Database\Schema\Builder::defaultStringLength(191);
-        
-        // Configure MySQL for utf8mb4 compatibility
-        if (config('database.default') === 'mysql') {
-            \DB::statement('SET SESSION sql_mode = "STRICT_TRANS_TABLES,NO_ZERO_DATE,NO_ZERO_IN_DATE,ERROR_FOR_DIVISION_BY_ZERO"');
-        }
-    }
+   public function boot(): void
+{
+    // This is correct and necessary for older MySQL/MariaDB versions
+    Schema::defaultStringLength(191);
+    
+    // You don't need to call both Schema:: and \Illuminate\Database\Schema\Builder::
+    // Schema::defaultStringLength(191) handles it globally.
+    
+    /* REMOVE THIS BLOCK:
+       It causes the "max_prepared_stmt_count" error.
+       
+       if (config('database.default') === 'mysql') {
+           \DB::statement('SET SESSION sql_mode = "..."');
+       }
+    */
+}
 }
