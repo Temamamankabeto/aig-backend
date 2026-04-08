@@ -24,19 +24,19 @@ class RestaurantDemoDataSeeder extends Seeder
 
         $admin = User::firstOrCreate(
             ['email' => 'admin@restaurant.local'],
-            ['name' => 'System Admin', 'password' => Hash::make('password'), 'is_active' => true]
+            ['name' => 'System Admin', 'phone' => '+1987654321', 'password' => Hash::make('password'), 'is_active' => true]
         );
         if ($adminRole) $admin->syncRoles([$adminRole]);
 
         $waiter = User::firstOrCreate(
             ['email' => 'waiter@restaurant.local'],
-            ['name' => 'Default Waiter', 'password' => Hash::make('password'), 'is_active' => true]
+            ['name' => 'Default Waiter', 'phone' => '+1234567891', 'password' => Hash::make('password'), 'is_active' => true]
         );
         if ($waiterRole) $waiter->syncRoles([$waiterRole]);
 
         $cashier = User::firstOrCreate(
             ['email' => 'cashier@restaurant.local'],
-            ['name' => 'Default Cashier', 'password' => Hash::make('password'), 'is_active' => true]
+            ['name' => 'Default Cashier', 'phone' => '+1234567892', 'password' => Hash::make('password'), 'is_active' => true]
         );
         if ($cashierRole) $cashier->syncRoles([$cashierRole]);
 

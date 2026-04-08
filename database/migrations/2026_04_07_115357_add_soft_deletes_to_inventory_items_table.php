@@ -11,9 +11,8 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('payments', function (Blueprint $table) {
-            $table->foreignId('cash_shift_id')->nullable()->change();
-            $table->foreign('cash_shift_id')->references('id')->on('cash_shifts')->onDelete('set null');
+        Schema::table('inventory_items', function (Blueprint $table) {
+            $table->softDeletes();
         });
     }
 
@@ -22,8 +21,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('payments', function (Blueprint $table) {
-            $table->dropForeign(['cash_shift_id']);
+        Schema::table('inventory_items', function (Blueprint $table) {
+            $table->dropSoftDeletes();
         });
     }
 };

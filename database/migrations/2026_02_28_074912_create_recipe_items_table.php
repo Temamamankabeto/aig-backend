@@ -14,8 +14,8 @@ return new class extends Migration {
             $table->foreignId('inventory_item_id')->constrained('inventory_items')->cascadeOnDelete();
 
             // how much raw material is used per 1 menu item
-            $table->decimal('qty_used', 12, 3);
-                        $table->string('unit')->default('pcs');
+            $table->decimal('quantity', 12, 3);
+            $table->string('unit')->default('pcs');
 
             $table->timestamps();
 
