@@ -47,9 +47,9 @@ class RestaurantDemoDataSeeder extends Seeder
         $food = MenuCategory::firstOrCreate(['name' => 'Food'], ['is_active' => true]);
         $drink = MenuCategory::firstOrCreate(['name' => 'Drinks'], ['is_active' => true]);
 
-        $bread = InventoryItem::firstOrCreate(['name' => 'Bread'], ['sku' => 'INV-BREAD', 'unit' => 'pcs', 'quantity' => 100, 'reorder_level' => 20, 'unit_cost' => 5]);
-        $beef = InventoryItem::firstOrCreate(['name' => 'Beef'], ['sku' => 'INV-BEEF', 'unit' => 'kg', 'quantity' => 50, 'reorder_level' => 10, 'unit_cost' => 600]);
-        $softDrink = InventoryItem::firstOrCreate(['name' => 'Soft Drink Syrup'], ['sku' => 'INV-SYRUP', 'unit' => 'ltr', 'quantity' => 20, 'reorder_level' => 5, 'unit_cost' => 120]);
+        $bread = InventoryItem::firstOrCreate(['name' => 'Bread'], ['unit' => 'pcs', 'minimum_quantity' => 20, 'average_purchase_price' => 5]);
+        $beef = InventoryItem::firstOrCreate(['name' => 'Beef'], ['unit' => 'kg', 'minimum_quantity' => 10, 'average_purchase_price' => 600]);
+        $softDrink = InventoryItem::firstOrCreate(['name' => 'Soft Drink Syrup'], ['unit' => 'ltr', 'minimum_quantity' => 5, 'average_purchase_price' => 120]);
 
         $burger = MenuItem::firstOrCreate(['name' => 'Burger'], ['category_id' => $food->id, 'type' => 'food', 'price' => 180, 'is_active' => true, 'is_available' => true]);
         $cola = MenuItem::firstOrCreate(['name' => 'Cola'], ['category_id' => $drink->id, 'type' => 'drink', 'price' => 60, 'is_active' => true, 'is_available' => true]);
