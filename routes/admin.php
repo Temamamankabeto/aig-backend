@@ -45,13 +45,14 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
     Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
 
     Route::get('/menu/categories', [MenuCategoryController::class, 'index']);
-Route::get('/menu/categories/{id}', [MenuCategoryController::class, 'show']);
-Route::post('/menu/categories', [MenuCategoryController::class, 'store']);
-Route::put('/menu/categories/{id}', [MenuCategoryController::class, 'update']);
-Route::patch('/menu/categories/{id}', [MenuCategoryController::class, 'update']);
-    Route::patch('/menu/categories/{id}/toggle', [MenuCategoryController::class, 'toggle']);
-Route::delete('/menu/categories/{id}', [MenuCategoryController::class, 'destroy']);
 
+    Route::get('/menu/categories', [MenuCategoryController::class, 'index']);
+    Route::get('/menu/categories/{id}', [MenuCategoryController::class, 'show']);
+    Route::post('/menu/categories', [MenuCategoryController::class, 'store']);
+    Route::put('/menu/categories/{id}', [MenuCategoryController::class, 'update']);
+    Route::patch('/menu/categories/{id}', [MenuCategoryController::class, 'update']);
+        Route::patch('/menu/categories/{id}/toggle', [MenuCategoryController::class, 'toggle']);
+    Route::delete('/menu/categories/{id}', [MenuCategoryController::class, 'destroy']);
 
     Route::get('/menu/items', [MenuItemController::class, 'index']);
     Route::get('/menu/items/{id}', [MenuItemController::class, 'show']);
@@ -139,17 +140,21 @@ Route::delete('/menu/categories/{id}', [MenuCategoryController::class, 'destroy'
     Route::get('/cash-shifts/current', [CashShiftController::class, 'current']);
     Route::get('/cash-shifts/{id}', [CashShiftController::class, 'show']);
 
-    Route::get('/inventory/items', [InventoryItemController::class, 'index']);
-    Route::get('/inventory/items/{id}', [InventoryItemController::class, 'show']);
-    Route::get('/inventory/transactions', [InventoryTransactionController::class, 'index']);
-    Route::get('/reports/low-stock', [InventoryReportController::class, 'lowStock']);
-    Route::get('/reports/reorder-suggestions', [InventoryReportController::class, 'reorderSuggestions']);
-    Route::get('/reports/recipe-integrity', [InventoryReportController::class, 'recipeIntegrity']);
-    Route::get('/reports/stock-valuation', [InventoryReportController::class, 'stockValuation']);
-    Route::post('/inventory/items', [InventoryItemController::class, 'store']);
-    Route::put('/inventory/items/{id}', [InventoryItemController::class, 'update']);
-    Route::post('/inventory/items/{id}/adjust', [InventoryTransactionController::class, 'adjust']);
-    Route::post('/inventory/items/{id}/waste', [InventoryTransactionController::class, 'waste']);
+    // Inventory Items CRUD
+Route::get('/inventory/items', [InventoryItemController::class, 'index']);
+Route::get('/inventory/items/trashed', [InventoryItemController::class, 'trashed']);
+Route::get('/inventory/items/{id}', [InventoryItemController::class, 'show']);
+Route::post('/inventory/items', [InventoryItemController::class, 'store']);
+Route::put('/inventory/items/{id}', [InventoryItemController::class, 'update']);
+Route::patch('/inventory/items/{id}', [InventoryItemController::class, 'update']);
+Route::delete('/inventory/items/{id}', [InventoryItemController::class, 'destroy']);
+Route::post('/inventory/items/{id}/restore', [InventoryItemController::class, 'restore']);
+Route::delete('/inventory/items/{id}/force', [InventoryItemController::class, 'forceDelete']);
+
+// Inventory Transactions
+Route::get('/inventory/transactions', [InventoryTransactionController::class, 'index']);
+Route::post('/inventory/items/{id}/adjust', [InventoryTransactionController::class, 'adjust']);
+Route::post('/inventory/items/{id}/waste', [InventoryTransactionController::class, 'waste']);
 
     Route::get('/suppliers', [SupplierController::class, 'index']);
     Route::get('/suppliers/{id}', [SupplierController::class, 'show']);
@@ -164,8 +169,12 @@ Route::delete('/menu/categories/{id}', [MenuCategoryController::class, 'destroy'
     Route::post('/purchase-orders/{id}/receive', [StockReceivingController::class, 'receive']);
 
     Route::get('/recipes', [RecipeController::class, 'index']);
-    Route::get('/recipes/{id}', [RecipeController::class, 'show']);
+    Route::get('/recipes/menu-item/{menuItemId}', [RecipeController::class, 'showByMenuItem']);
     Route::get('/menu/items/{id}/recipe', [RecipeController::class, 'showByMenuItem']);
+    Route::get('/recipes/{id}', [RecipeController::class, 'show']);
     Route::post('/recipes', [RecipeController::class, 'store']);
-    Route::put('/recipes/{id}', [RecipeController::class, 'update']); 
+    Route::put('/recipes/{id}', [RecipeController::class, 'update']);
+    Route::patch('/recipes/{id}', [RecipeController::class, 'update']);
+
+    
 });
