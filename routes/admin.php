@@ -167,7 +167,5 @@ Route::delete('/menu/categories/{id}', [MenuCategoryController::class, 'destroy'
     Route::get('/recipes/{id}', [RecipeController::class, 'show']);
     Route::get('/menu/items/{id}/recipe', [RecipeController::class, 'showByMenuItem']);
     Route::post('/recipes', [RecipeController::class, 'store']);
-    Route::put('/recipes/{id}', [RecipeController::class, 'update']);
-
-    
+    Route::put('/recipes/{id}', [RecipeController::class, 'update']); 
 });
