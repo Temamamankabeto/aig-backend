@@ -6,19 +6,24 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    /**
+     * Run the migrations.
+     */
     public function up(): void
     {
         Schema::table('menu_items', function (Blueprint $table) {
-            $table->enum('menu_mode', ['normal', 'spatial'])
-                  ->default('normal')
-                  ->after('type'); // change column position if needed
+            $table->integer('views_count')->default(0)->after('prep_minutes');
+            $table->boolean('is_featured')->default(false)->after('views_count');
         });
     }
 
+    /**
+     * Reverse the migrations.
+     */
     public function down(): void
     {
         Schema::table('menu_items', function (Blueprint $table) {
-            $table->dropColumn('menu_mode');
+            $table->dropColumn(['views_count', 'is_featured']);
         });
     }
 };

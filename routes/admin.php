@@ -132,15 +132,19 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
     Route::get('/cash-shifts/current', [CashShiftController::class, 'current']);
     Route::get('/cash-shifts/{id}', [CashShiftController::class, 'show']);
 
-    Route::get('/inventory/items', [InventoryItemController::class, 'index']);
-    Route::get('/inventory/items/{id}', [InventoryItemController::class, 'show']);
     Route::get('/inventory/transactions', [InventoryTransactionController::class, 'index']);
     Route::get('/reports/low-stock', [InventoryReportController::class, 'lowStock']);
     Route::get('/reports/reorder-suggestions', [InventoryReportController::class, 'reorderSuggestions']);
     Route::get('/reports/recipe-integrity', [InventoryReportController::class, 'recipeIntegrity']);
     Route::get('/reports/stock-valuation', [InventoryReportController::class, 'stockValuation']);
     Route::post('/inventory/items', [InventoryItemController::class, 'store']);
+    Route::get('/inventory/items', [InventoryItemController::class, 'index']);
+    Route::get('/inventory/items/trashed', [InventoryItemController::class, 'trashed']);
+    Route::get('/inventory/items/{id}', [InventoryItemController::class, 'show']);
     Route::put('/inventory/items/{id}', [InventoryItemController::class, 'update']);
+    Route::delete('/inventory/items/{id}', [InventoryItemController::class, 'destroy']);
+    Route::post('/inventory/items/{id}/restore', [InventoryItemController::class, 'restore']);
+    Route::delete('/inventory/items/{id}/force', [InventoryItemController::class, 'forceDelete']);
     Route::post('/inventory/items/{id}/adjust', [InventoryTransactionController::class, 'adjust']);
     Route::post('/inventory/items/{id}/waste', [InventoryTransactionController::class, 'waste']);
 

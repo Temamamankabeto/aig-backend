@@ -9,17 +9,30 @@ use Illuminate\Http\Request;
 class InventoryItemController extends Controller
 {
     public function index(Request $request)
-    {
-        $this->authorize('viewAny', InventoryItem::class);
-        $q = InventoryItem::query()->orderBy('id', 'desc');
+{
+    $this->authorize('viewAny', InventoryItem::class);
+    
+    $q = InventoryItem::query()->orderBy('id', 'desc');
 
-        if ($request->filled('category')) $q->where('category', $request->category);
-        if ($request->filled('is_active')) $q->where('is_active', (bool) $request->is_active);
-        if ($request->filled('search')) $q->where('name', 'like', '%' . $request->search . '%');
+    if ($request->filled('category')) $q->where('category', $request->category);
+    if ($request->filled('is_active')) $q->where('is_active', (bool) $request->is_active);
+    if ($request->filled('search')) $q->where('name', 'like', '%' . $request->search . '%');
 
-        return response()->json(['success' => true, 'data' => $q->paginate((int) ($request->get('per_page', 20)))]);
-    }
+    // 1. Get the paginator instance
+    $paginatedItems = $q->paginate((int) $request->get('per_page', 20));
 
+    // 2. Return the exact structure you requested
+    return response()->json([
+        'success' => true,
+        'data' => $paginatedItems->items(), // This returns the array of items only
+        'meta' => [
+            'current_page' => $paginatedItems->currentPage(),
+            'per_page'     => $paginatedItems->perPage(),
+            'total'        => $paginatedItems->total(),
+            'last_page'    => $paginatedItems->lastPage(),
+        ],
+    ]);
+}
     public function show($id)
     {
         $row = InventoryItem::with('transactions')->findOrFail($id);
@@ -63,5 +76,68 @@ class InventoryItemController extends Controller
 
         $row->update($data);
         return response()->json(['success' => true, 'data' => $row]);
+    }
+
+    public function destroy($id)
+    {
+        $row = InventoryItem::findOrFail($id);
+        $this->authorize('delete', $row);
+        
+        $row->delete(); // Soft delete
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Inventory item deleted successfully'
+        ]);
+    }
+
+    public function forceDelete($id)
+    {
+        $row = InventoryItem::withTrashed()->findOrFail($id);
+        $this->authorize('delete', $row);
+        
+        $row->forceDelete(); // Permanent delete
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Inventory item permanently deleted'
+        ]);
+    }
+
+    public function restore($id)
+    {
+        $row = InventoryItem::withTrashed()->findOrFail($id);
+        $this->authorize('restore', $row);
+        
+        $row->restore();
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Inventory item restored successfully',
+            'data' => $row
+        ]);
+    }
+
+    public function trashed(Request $request)
+    {
+        $this->authorize('viewAny', InventoryItem::class);
+        
+        $q = InventoryItem::onlyTrashed()->orderBy('deleted_at', 'desc');
+        
+        if ($request->filled('category')) $q->where('category', $request->category);
+        if ($request->filled('search')) $q->where('name', 'like', '%' . $request->search . '%');
+        
+        $paginatedItems = $q->paginate((int) $request->get('per_page', 20));
+        
+        return response()->json([
+            'success' => true,
+            'data' => $paginatedItems->items(),
+            'meta' => [
+                'current_page' => $paginatedItems->currentPage(),
+                'per_page'     => $paginatedItems->perPage(),
+                'total'        => $paginatedItems->total(),
+                'last_page'    => $paginatedItems->lastPage(),
+            ],
+        ]);
     }
 }

@@ -15,12 +15,16 @@ return [
     'allowed_origins' => [
         'http://localhost:3000',
         'http://127.0.0.1:3000',
-
+        'http://172.25.20.102:3000',
+        'http://172.18.112.1:8000',
         'https://cafeaig.vercel.app',
         'http://192.168.2.1:3000',
     ],
 
-    'allowed_origins_patterns' => [],
+    'allowed_origins_patterns' => [
+        'http://*:*',
+        'https://*:*',
+    ],
 
     'allowed_headers' => ['*'],
 

@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Hash; 
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Str;
@@ -22,6 +22,7 @@ class AuthController extends Controller
             'phone' => ['required', 'string', 'max:20'],
             'password' => ['required', 'confirmed', 'min:8'],
             'address' => ['nullable', 'string', 'max:500'],
+            'role' => ['nullable', 'string', 'exists:roles,name'],
         ]);
 
         if ($validator->fails()) {
@@ -39,7 +40,9 @@ class AuthController extends Controller
             'password' => Hash::make($request->password),
         ]);
 
-        $user->assignRole('customer');
+        // Assign role - use provided role or default to 'customer'
+        $role = $request->role ?? 'customer';
+        $user->assignRole($role);
 
         $token = $user->createToken('aig-api-token')->plainTextToken;
 

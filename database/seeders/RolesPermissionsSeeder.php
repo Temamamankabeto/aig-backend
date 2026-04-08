@@ -242,6 +242,7 @@ class RolesPermissionsSeeder extends Seeder
             ['email' => $adminEmail],
             [
                 'name' => 'General Admin',
+                'phone' => '+1234567890', // Required field
                 'password' => Hash::make('Admin@12345'),
             ]
         );
