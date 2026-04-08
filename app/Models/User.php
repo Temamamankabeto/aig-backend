@@ -28,6 +28,8 @@ protected $fillable=[
     protected $casts = [
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
+        'is_active'=> 'boolean',
+        
     ];
 
     // Dining tables assigned to this waiter
