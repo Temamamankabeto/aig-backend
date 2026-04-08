@@ -18,7 +18,7 @@ protected $guard_name = 'sanctum';
 protected $fillable=[
 'name','email','phone','profile_image',
 
-'password','is_active','phone','address',
+'password','is_active','address',
 ];
 
     protected $hidden = [
