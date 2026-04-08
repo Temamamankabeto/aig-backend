@@ -25,7 +25,7 @@ jobs:
             host ${{ secrets.SSH_HOST }} || echo "HOST command failed"
           else
             echo "SSH_HOST secret is not set"
-          fi
+          fi 
 
       - name: Setup SSH Key
         run: |
