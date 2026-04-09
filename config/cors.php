@@ -19,7 +19,8 @@ return [
     'allowed_origins' => [
         'http://localhost:3000',
         'http://192.168.2.1:3000',
-        'http://192.168.2.1:3000'
+        'http://192.168.2.1:3000',
+        'https://cafeaig.vercel.app'
     ],
 
     'allowed_origins_patterns' => [],
