@@ -117,7 +117,7 @@ class CashierOrderController extends Controller
      */
     public function menu(Request $request)
     {
-        $this->authorize('create', Order::class);
+        $this->authorize('viewAny', Order::class);
 
         $query = MenuItem::query()
             ->with('category')
@@ -172,7 +172,7 @@ class CashierOrderController extends Controller
      */
     public function tables(Request $request)
     {
-        $this->authorize('create', Order::class);
+        $this->authorize('viewAny', Order::class);
     
         $query = DiningTable::query(); // removed is_active filter
     
