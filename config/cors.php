@@ -19,11 +19,16 @@ return [
     'allowed_origins' => [
         'http://localhost:3000',
         'http://192.168.2.1:3000',
-        'http://192.168.2.1:3000',
-        'https://cafeaig.vercel.app'
+        'https://cafeaig.vercel.app',
+        'https://aigcafe.com',
+        'https://www.aigcafe.com',
+        'https://aigcafeapi.ofijan.com',
     ],
 
-    'allowed_origins_patterns' => [],
+    'allowed_origins_patterns' => [
+        'https://*.aigcafe.com',
+        'https://*.ofijan.com',
+    ],
 
     'allowed_headers' => ['*'], // Allow all headers (e.g., Content-Type, X-XSRF-TOKEN)
 
