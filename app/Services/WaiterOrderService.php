@@ -59,7 +59,7 @@ class WaiterOrderService
                     'unit_price' => $unitPrice,
                     'line_total' => $lineTotal,
                     'station' => $menuItem->type === 'food' ? 'kitchen' : 'bar',
-                    'item_status' => 'confirmed',
+                    'item_status' => 'pending',
                     'notes' => is_string($itemNote) ? (trim($itemNote) ?: null) : null,
                     'modifiers' => is_array($itemModifiers) ? $itemModifiers : null,
                 ];
@@ -112,7 +112,7 @@ class WaiterOrderService
                     ->firstOrFail();
             }
 
-            $orderStatus = $isCashierOrder ? 'confirmed' : 'pending';
+            $orderStatus = 'pending';
             $billStatus = 'issued';
             $issuedAt = null;
 
@@ -160,19 +160,15 @@ class WaiterOrderService
 
                 $orderItem = OrderItem::create($itemData);
 
-                if ($orderItem->item_status === 'confirmed') {
-                    $this->inventoryDeductionService->deductForOrderItem($orderItem, $authUserId);
-                }
-
                 if ($orderItem->station === 'kitchen') {
                     KitchenTicket::create([
                         'order_item_id' => $orderItem->id,
-                        'status' => 'confirmed',
+                        'status' => 'pending',
                     ]);
                 } else {
                     BarTicket::create([
                         'order_item_id' => $orderItem->id,
-                        'status' => 'confirmed',
+                        'status' => 'pending',
                     ]);
                 }
             }

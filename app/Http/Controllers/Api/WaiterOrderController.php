@@ -766,16 +766,6 @@ public function cancelableOrders(Request $request)
  ]);
 
  if ($order->bill && $order->bill->status === 'paid') {
- $alreadyDeducted = DB::table('inventory_transactions')
- ->where('reference_type', 'order')
- ->where('reference_id', $order->id)
- ->where('type', 'out')
- ->exists();
-
- if (! $alreadyDeducted) {
- $this->inventoryDeductionService->deductForOrder($order);
- }
-
  $order->update([
  'status' => 'completed',
  'completed_at' => now(),
@@ -1034,6 +1024,14 @@ if ($order->status !== 'pending') {
 return response()->json([
 'success' => false,
 'message' => 'Only pending orders can be confirmed.',
+], 422);
+}
+
+if ($order->created_at && now()->lt($order->created_at->copy()->addMinutes(5))) {
+return response()->json([
+'success' => false,
+'message' => 'Orders can be confirmed only after 5 minutes from creation.',
+'confirmable_at' => $order->created_at->copy()->addMinutes(5)->toDateTimeString(),
 ], 422);
 }
 
