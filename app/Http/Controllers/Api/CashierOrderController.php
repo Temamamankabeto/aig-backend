@@ -4,17 +4,23 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreOrderRequest;
+use App\Models\BarTicket;
 use App\Models\DiningTable;
+use App\Models\KitchenTicket;
+use App\Models\OrderItem;
 use App\Models\MenuItem;
 use App\Models\Order;
+use App\Services\InventoryDeductionService;
 use App\Services\WaiterOrderService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Throwable;
 
 class CashierOrderController extends Controller
 {
     public function __construct(
-        private WaiterOrderService $waiterOrderService
+        private WaiterOrderService $waiterOrderService,
+        private InventoryDeductionService $inventoryDeductionService
     ) {
     }
 
@@ -242,6 +248,77 @@ class CashierOrderController extends Controller
                 'message' => $e->getMessage(),
             ], 422);
         }
+    }
+
+
+
+    /**
+     * Confirm a pending cashier order after 5 minutes and deduct inventory.
+     * POST /cashier/orders/{id}/confirm
+     */
+    public function confirm($id)
+    {
+        $order = Order::findOrFail($id);
+        $this->authorize('update', $order);
+
+        return DB::transaction(function () use ($id) {
+            $order = Order::with(['items.menuItem', 'table', 'bill'])
+                ->lockForUpdate()
+                ->findOrFail($id);
+
+            if ($order->status !== 'pending') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Only pending orders can be confirmed.',
+                ], 422);
+            }
+
+            if ($order->created_at && now()->lt($order->created_at->copy()->addMinutes(5))) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cashier orders can be confirmed only after 5 minutes from creation.',
+                    'confirmable_at' => $order->created_at->copy()->addMinutes(5)->toDateTimeString(),
+                ], 422);
+            }
+
+            $order->update([
+                'status' => 'confirmed',
+            ]);
+
+            $orderItems = OrderItem::where('order_id', $order->id)->lockForUpdate()->get();
+
+            foreach ($orderItems as $orderItem) {
+                $orderItem->update([
+                    'item_status' => 'confirmed',
+                ]);
+
+                $this->inventoryDeductionService->deductForOrderItem($orderItem->fresh(), (int) auth()->id());
+            }
+
+            KitchenTicket::whereIn('order_item_id', function ($q) use ($order) {
+                $q->select('id')
+                    ->from('order_items')
+                    ->where('order_id', $order->id)
+                    ->where('station', 'kitchen');
+            })->update([
+                'status' => 'confirmed',
+            ]);
+
+            BarTicket::whereIn('order_item_id', function ($q) use ($order) {
+                $q->select('id')
+                    ->from('order_items')
+                    ->where('order_id', $order->id)
+                    ->where('station', 'bar');
+            })->update([
+                'status' => 'confirmed',
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Cashier order confirmed successfully.',
+                'data' => $order->fresh(['items.menuItem', 'bill', 'table', 'waiter', 'creator']),
+            ]);
+        });
     }
 
     /**
