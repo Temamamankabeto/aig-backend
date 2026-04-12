@@ -9,6 +9,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Recipe;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class InventoryDeductionService
@@ -22,6 +23,11 @@ class InventoryDeductionService
                 ->findOrFail($orderItem->id);
 
             if ($lockedOrderItem->inventory_deducted_at || $lockedOrderItem->item_status !== 'confirmed') {
+                Log::info('Skipping inventory deduction for order item.', [
+                    'order_item_id' => $lockedOrderItem->id,
+                    'inventory_deducted_at' => $lockedOrderItem->inventory_deducted_at,
+                    'item_status' => $lockedOrderItem->item_status,
+                ]);
                 return;
             }
 
@@ -33,7 +39,21 @@ class InventoryDeductionService
             $trackingMode = $menuItem->inventory_tracking_mode
                 ?? ($menuItem->has_ingredients ? 'recipe' : 'none');
 
+            Log::info('Inventory deduction started for order item.', [
+                'order_item_id' => $lockedOrderItem->id,
+                'order_id' => $lockedOrderItem->order_id,
+                'menu_item_id' => $menuItem->id,
+                'menu_item_name' => $menuItem->name,
+                'tracking_mode' => $trackingMode,
+                'quantity' => $lockedOrderItem->quantity,
+            ]);
+
             if ($trackingMode === 'none') {
+                Log::info('No inventory deduction needed for service-only item.', [
+                    'order_item_id' => $lockedOrderItem->id,
+                    'menu_item_name' => $menuItem->name,
+                ]);
+
                 $lockedOrderItem->inventory_deducted_at = now();
                 $lockedOrderItem->save();
                 return;
@@ -50,6 +70,13 @@ class InventoryDeductionService
 
                 $neededQty = round((float) $lockedOrderItem->quantity, 3);
 
+                Log::info('Direct inventory deduction detected.', [
+                    'order_item_id' => $lockedOrderItem->id,
+                    'inventory_item_id' => $inventoryItem->id,
+                    'inventory_item_name' => $inventoryItem->name,
+                    'needed_qty' => $neededQty,
+                ]);
+
                 $this->deductFromInventory(
                     $inventoryItem,
                     $neededQty,
@@ -65,6 +92,12 @@ class InventoryDeductionService
 
                 $lockedOrderItem->inventory_deducted_at = now();
                 $lockedOrderItem->save();
+
+                Log::info('Direct inventory deduction completed.', [
+                    'order_item_id' => $lockedOrderItem->id,
+                    'inventory_item_id' => $inventoryItem->id,
+                ]);
+
                 return;
             }
 
@@ -80,6 +113,13 @@ class InventoryDeductionService
                 if ($recipe->items->isEmpty()) {
                     throw new RuntimeException("Insufficient configuration: {$menuItem->name} recipe has no ingredients.");
                 }
+
+                Log::info('Recipe-based deduction detected.', [
+                    'order_item_id' => $lockedOrderItem->id,
+                    'menu_item_name' => $menuItem->name,
+                    'recipe_id' => $recipe->id,
+                    'ingredients_count' => $recipe->items->count(),
+                ]);
 
                 foreach ($recipe->items as $ri) {
                     $inventoryItem = InventoryItem::query()
@@ -98,7 +138,23 @@ class InventoryDeductionService
 
                     $neededQty = round((float) $ri->quantity * (float) $lockedOrderItem->quantity, 3);
 
+                    Log::info('Preparing ingredient deduction.', [
+                        'order_item_id' => $lockedOrderItem->id,
+                        'ingredient_inventory_item_id' => $ri->inventory_item_id,
+                        'ingredient_inventory_item_name' => $inventoryItem->name,
+                        'recipe_unit_qty' => (float) $ri->quantity,
+                        'order_quantity' => (float) $lockedOrderItem->quantity,
+                        'total_needed_qty' => $neededQty,
+                        'recipe_unit' => $ri->unit,
+                        'inventory_unit' => $inventoryItem->unit,
+                    ]);
+
                     if ($neededQty <= 0) {
+                        Log::info('Skipping ingredient deduction because needed quantity is zero or negative.', [
+                            'order_item_id' => $lockedOrderItem->id,
+                            'ingredient_inventory_item_id' => $ri->inventory_item_id,
+                            'total_needed_qty' => $neededQty,
+                        ]);
                         continue;
                     }
 
@@ -118,6 +174,12 @@ class InventoryDeductionService
 
                 $lockedOrderItem->inventory_deducted_at = now();
                 $lockedOrderItem->save();
+
+                Log::info('Recipe-based deduction completed.', [
+                    'order_item_id' => $lockedOrderItem->id,
+                    'menu_item_name' => $menuItem->name,
+                ]);
+
                 return;
             }
 
@@ -129,8 +191,18 @@ class InventoryDeductionService
     {
         $order->loadMissing(['items.menuItem']);
 
+        Log::info('Deducting inventory for full order.', [
+            'order_id' => $order->id,
+            'items_count' => $order->items->count(),
+        ]);
+
         foreach ($order->items as $orderItem) {
             if (in_array($orderItem->item_status, ['cancelled', 'rejected'], true)) {
+                Log::info('Skipping deduction for cancelled/rejected order item.', [
+                    'order_id' => $order->id,
+                    'order_item_id' => $orderItem->id,
+                    'item_status' => $orderItem->item_status,
+                ]);
                 continue;
             }
 
@@ -141,6 +213,11 @@ class InventoryDeductionService
     public function restoreForOrder(Order $order, ?int $userId = null): void
     {
         $order->loadMissing(['items.menuItem.recipe.items']);
+
+        Log::info('Restoring inventory for full order.', [
+            'order_id' => $order->id,
+            'items_count' => $order->items->count(),
+        ]);
 
         foreach ($order->items as $orderItem) {
             $this->restoreForOrderItem($orderItem, $userId);
@@ -156,20 +233,37 @@ class InventoryDeductionService
                 ->findOrFail($orderItem->id);
 
             if (!$lockedOrderItem->inventory_deducted_at) {
+                Log::info('Skipping inventory restore because item was not deducted.', [
+                    'order_item_id' => $lockedOrderItem->id,
+                ]);
                 return;
             }
 
             $menuItem = $lockedOrderItem->menuItem;
             if (!$menuItem) {
+                Log::warning('Skipping inventory restore because menu item was not found.', [
+                    'order_item_id' => $lockedOrderItem->id,
+                ]);
                 return;
             }
 
             $trackingMode = $menuItem->inventory_tracking_mode
                 ?? ($menuItem->has_ingredients ? 'recipe' : 'none');
 
+            Log::info('Inventory restore started for order item.', [
+                'order_item_id' => $lockedOrderItem->id,
+                'order_id' => $lockedOrderItem->order_id,
+                'menu_item_name' => $menuItem->name,
+                'tracking_mode' => $trackingMode,
+            ]);
+
             if ($trackingMode === 'none') {
                 $lockedOrderItem->inventory_deducted_at = null;
                 $lockedOrderItem->save();
+
+                Log::info('No stock restore needed for service-only item.', [
+                    'order_item_id' => $lockedOrderItem->id,
+                ]);
                 return;
             }
 
@@ -225,6 +319,10 @@ class InventoryDeductionService
 
             $lockedOrderItem->inventory_deducted_at = null;
             $lockedOrderItem->save();
+
+            Log::info('Inventory restore completed for order item.', [
+                'order_item_id' => $lockedOrderItem->id,
+            ]);
         });
     }
 
@@ -236,6 +334,13 @@ class InventoryDeductionService
         string $note,
         ?int $userId
     ): void {
+        Log::info('Checking stock availability before deduction.', [
+            'inventory_item_id' => $inventoryItem->id,
+            'inventory_item_name' => $inventoryItem->name,
+            'current_stock' => (float) $inventoryItem->current_stock,
+            'needed_qty' => $neededQty,
+        ]);
+
         if ((float) $inventoryItem->current_stock < $neededQty) {
             throw new RuntimeException("Insufficient stock for {$inventoryItem->name}");
         }
@@ -268,6 +373,14 @@ class InventoryDeductionService
             $batch->save();
 
             $remainingToConsume = round($remainingToConsume - $consume, 3);
+
+            Log::info('Consumed stock from batch.', [
+                'inventory_item_id' => $inventoryItem->id,
+                'batch_id' => $batch->id,
+                'consumed_qty' => $consume,
+                'batch_remaining_qty' => (float) $batch->remaining_qty,
+                'remaining_to_consume' => $remainingToConsume,
+            ]);
         }
 
         InventoryTransaction::create([
@@ -281,6 +394,16 @@ class InventoryDeductionService
             'reference_id' => $referenceId,
             'note' => $note,
             'created_by' => $userId,
+        ]);
+
+        Log::info('Stock deducted successfully.', [
+            'inventory_item_id' => $inventoryItem->id,
+            'inventory_item_name' => $inventoryItem->name,
+            'before_quantity' => $beforeQty,
+            'after_quantity' => $afterQty,
+            'deducted_qty' => $neededQty,
+            'reference_type' => $referenceType,
+            'reference_id' => $referenceId,
         ]);
     }
 
@@ -309,6 +432,16 @@ class InventoryDeductionService
             'reference_id' => $referenceId,
             'note' => $note,
             'created_by' => $userId,
+        ]);
+
+        Log::info('Stock restored successfully.', [
+            'inventory_item_id' => $inventoryItem->id,
+            'inventory_item_name' => $inventoryItem->name,
+            'before_quantity' => $beforeQty,
+            'after_quantity' => $afterQty,
+            'restored_qty' => $qty,
+            'reference_type' => $referenceType,
+            'reference_id' => $referenceId,
         ]);
     }
 }

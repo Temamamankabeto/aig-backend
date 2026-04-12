@@ -7,13 +7,14 @@ use App\Http\Requests\StoreOrderRequest;
 use App\Models\BarTicket;
 use App\Models\DiningTable;
 use App\Models\KitchenTicket;
-use App\Models\OrderItem;
 use App\Models\MenuItem;
 use App\Models\Order;
+use App\Models\OrderItem;
 use App\Services\InventoryDeductionService;
 use App\Services\WaiterOrderService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class CashierOrderController extends Controller
@@ -125,7 +126,11 @@ class CashierOrderController extends Controller
         $this->authorize('viewAny', Order::class);
 
         $query = MenuItem::query()
-            ->with('category')
+            ->with([
+                'category',
+                'directInventoryItem',
+                'recipe.items.inventoryItem',
+            ])
             ->where('is_active', true)
             ->where('is_available', true);
 
@@ -161,6 +166,28 @@ class CashierOrderController extends Controller
                         ? url('storage/' . $item->image)
                         : ($item->image_url ?? null),
                     'is_available' => (bool) $item->is_available,
+                    'inventory_tracking_mode' => $item->inventory_tracking_mode
+                        ?? ($item->has_ingredients ? 'recipe' : 'none'),
+                    'direct_inventory_item' => $item->directInventoryItem ? [
+                        'id' => $item->directInventoryItem->id,
+                        'name' => $item->directInventoryItem->name,
+                        'unit' => $item->directInventoryItem->unit,
+                        'current_stock' => (float) $item->directInventoryItem->current_stock,
+                    ] : null,
+                    'ingredients' => $item->recipe
+                        ? $item->recipe->items->map(function ($ri) {
+                            return [
+                                'recipe_item_id' => $ri->id,
+                                'inventory_item_id' => $ri->inventory_item_id,
+                                'inventory_item_name' => $ri->inventoryItem?->name,
+                                'unit' => $ri->unit,
+                                'quantity' => (float) $ri->quantity,
+                                'current_stock' => $ri->inventoryItem
+                                    ? (float) $ri->inventoryItem->current_stock
+                                    : null,
+                            ];
+                        })->values()
+                        : [],
                 ];
             })
             ->values();
@@ -229,10 +256,23 @@ class CashierOrderController extends Controller
         $this->authorize('create', Order::class);
 
         try {
+            $validated = $request->validated();
+
+            Log::info('Standard order creation started.', [
+                'user_id' => auth()->id(),
+                'payload' => $validated,
+            ]);
+
             $order = $this->waiterOrderService->createOrder(
-                $request->validated(),
+                $validated,
                 (int) auth()->id()
             );
+
+            Log::info('Standard order created successfully.', [
+                'order_id' => $order->id,
+                'order_number' => $order->order_number,
+                'status' => $order->status,
+            ]);
 
             return response()->json([
                 'success' => true,
@@ -240,6 +280,12 @@ class CashierOrderController extends Controller
                 'data' => $order,
             ], 201);
         } catch (Throwable $e) {
+            Log::error('Standard order creation failed.', [
+                'user_id' => auth()->id(),
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage(),
@@ -259,12 +305,22 @@ class CashierOrderController extends Controller
         $order = Order::findOrFail($id);
         $this->authorize('update', $order);
 
+        Log::info('Cashier order confirm requested.', [
+            'order_id' => $id,
+            'requested_by' => auth()->id(),
+        ]);
+
         return DB::transaction(function () use ($id) {
             $order = Order::with(['items.menuItem', 'table', 'bill'])
                 ->lockForUpdate()
                 ->findOrFail($id);
 
             if ($order->status !== 'pending') {
+                Log::warning('Cashier order confirm blocked. Order is not pending.', [
+                    'order_id' => $order->id,
+                    'status' => $order->status,
+                ]);
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Only pending orders can be confirmed.',
@@ -272,6 +328,12 @@ class CashierOrderController extends Controller
             }
 
             if ($order->created_at && now()->lt($order->created_at->copy()->addMinutes(5))) {
+                Log::warning('Cashier order confirm blocked. 5-minute delay not reached.', [
+                    'order_id' => $order->id,
+                    'created_at' => optional($order->created_at)->toDateTimeString(),
+                    'confirmable_at' => $order->created_at->copy()->addMinutes(5)->toDateTimeString(),
+                ]);
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Cashier orders can be confirmed only after 5 minutes from creation.',
@@ -283,11 +345,22 @@ class CashierOrderController extends Controller
                 'status' => 'confirmed',
             ]);
 
+            Log::info('Cashier order moved to confirmed.', [
+                'order_id' => $order->id,
+            ]);
+
             $orderItems = OrderItem::where('order_id', $order->id)->lockForUpdate()->get();
 
             foreach ($orderItems as $orderItem) {
                 $orderItem->update([
                     'item_status' => 'confirmed',
+                ]);
+
+                Log::info('Confirming order item and triggering inventory deduction.', [
+                    'order_id' => $order->id,
+                    'order_item_id' => $orderItem->id,
+                    'menu_item_id' => $orderItem->menu_item_id,
+                    'quantity' => $orderItem->quantity,
                 ]);
 
                 $this->inventoryDeductionService->deductForOrderItem($orderItem->fresh(), (int) auth()->id());
@@ -311,6 +384,11 @@ class CashierOrderController extends Controller
                 'status' => 'confirmed',
             ]);
 
+            Log::info('Cashier order confirmed successfully.', [
+                'order_id' => $order->id,
+                'order_number' => $order->order_number,
+            ]);
+
             return response()->json([
                 'success' => true,
                 'message' => 'Cashier order confirmed successfully.',
@@ -330,7 +408,17 @@ class CashierOrderController extends Controller
         try {
             $validated = $request->validated();
 
+            Log::info('Cashier order creation started.', [
+                'user_id' => auth()->id(),
+                'payload' => $validated,
+            ]);
+
             if (empty($validated['waiter_id'])) {
+                Log::warning('Cashier order creation failed: waiter_id missing.', [
+                    'user_id' => auth()->id(),
+                    'payload' => $validated,
+                ]);
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Waiter is required for cashier order entry.',
@@ -356,12 +444,24 @@ class CashierOrderController extends Controller
             // - stock checked and deducted immediately
             $validated['_source'] = 'cashier';
 
+            Log::info('Cashier order payload normalized.', [
+                'user_id' => auth()->id(),
+                'normalized_payload' => $validated,
+            ]);
+
             $order = $this->waiterOrderService->createOrder(
                 $validated,
                 (int) auth()->id()
             );
 
             $order->load('bill');
+
+            Log::info('Cashier order created and confirmed successfully.', [
+                'order_id' => $order->id,
+                'order_number' => $order->order_number,
+                'status' => $order->status,
+                'bill_id' => $order->bill->id ?? null,
+            ]);
 
             return response()->json([
                 'success' => true,
@@ -379,6 +479,12 @@ class CashierOrderController extends Controller
                 ],
             ], 201);
         } catch (Throwable $e) {
+            Log::error('Cashier order creation failed.', [
+                'user_id' => auth()->id(),
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage(),
