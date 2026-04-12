@@ -10,6 +10,9 @@ use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\OrderItem;
 use Illuminate\Support\Facades\DB;
+use App\Services\InventoryDeductionService;
+use App\Services\OrderNumberService;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class WaiterOrderService
