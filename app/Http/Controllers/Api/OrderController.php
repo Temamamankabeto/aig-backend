@@ -653,12 +653,14 @@ class OrderController extends Controller
                 return response()->json(['success' => false, 'message' => 'Cannot cancel completed/cancelled order'], 422);
             }
 
+            $this->inventoryDeductionService->restoreForOrder($order, auth()->id());
+
             $order->status = 'cancelled';
             $order->save();
 
             OrderItem::where('order_id', $order->id)->update(['item_status' => 'cancelled']);
 
-            return response()->json(['success' => true, 'data' => $order]);
+            return response()->json(['success' => true, 'data' => $order->fresh(['items.menuItem', 'bill'])]);
         });
     }
 

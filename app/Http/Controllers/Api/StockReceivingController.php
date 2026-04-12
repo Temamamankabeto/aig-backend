@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\InventoryItem;
+use App\Models\InventoryItemBatch;
 use App\Models\InventoryTransaction;
 use App\Models\PurchaseOrder;
 use App\Models\StockReceiving;
@@ -49,18 +50,32 @@ class StockReceivingController extends Controller
 
             foreach ($po->items as $poi) {
                 $inv = InventoryItem::lockForUpdate()->findOrFail($poi->inventory_item_id);
-                $inv->quantity = (float) $inv->quantity + (float) $poi->quantity;
-                $inv->unit_cost = (float) $poi->unit_cost;
+                $beforeQty = round((float) $inv->current_stock, 3);
+                $receivedQty = round((float) $poi->quantity, 3);
+                $afterQty = round($beforeQty + $receivedQty, 3);
+
+                $inv->current_stock = $afterQty;
+                $inv->average_purchase_price = (float) $poi->unit_cost;
                 $inv->save();
+
+                InventoryItemBatch::create([
+                    'inventory_item_id' => $inv->id,
+                    'purchase_price' => (float) $poi->unit_cost,
+                    'initial_qty' => $receivedQty,
+                    'remaining_qty' => $receivedQty,
+                    'expiry_date' => null,
+                ]);
 
                 InventoryTransaction::create([
                     'inventory_item_id' => $inv->id,
                     'type' => 'in',
-                    'quantity' => (float) $poi->quantity,
+                    'quantity' => $receivedQty,
                     'unit_cost' => (float) $poi->unit_cost,
+                    'before_quantity' => $beforeQty,
+                    'after_quantity' => $afterQty,
                     'reference_type' => 'purchase_order',
                     'reference_id' => $po->id,
-                    'reason' => 'Stock receiving',
+                    'note' => 'Stock receiving',
                     'created_by' => $request->user()->id,
                 ]);
             }

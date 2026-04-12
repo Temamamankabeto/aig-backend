@@ -59,7 +59,6 @@ class WaiterOrderService
                     'unit_price' => $unitPrice,
                     'line_total' => $lineTotal,
                     'station' => $menuItem->type === 'food' ? 'kitchen' : 'bar',
-                    'item_status' => 'pending',
                     'notes' => is_string($itemNote) ? (trim($itemNote) ?: null) : null,
                     'modifiers' => is_array($itemModifiers) ? $itemModifiers : null,
                 ];
@@ -112,9 +111,12 @@ class WaiterOrderService
                     ->firstOrFail();
             }
 
-            $orderStatus = 'pending';
+            $orderStatus = $isCashierOrder ? 'confirmed' : 'pending';
+            $itemStatus = $isCashierOrder ? 'confirmed' : 'pending';
+            $ticketStatus = $isCashierOrder ? 'confirmed' : 'pending';
+
             $billStatus = 'issued';
-            $issuedAt = null;
+            $issuedAt = $isCashierOrder ? now() : null;
 
             $customerName = isset($data['customer_name'])
                 ? (trim((string) $data['customer_name']) ?: 'Guest')
@@ -157,18 +159,19 @@ class WaiterOrderService
 
             foreach ($preparedItems as $itemData) {
                 $itemData['order_id'] = $order->id;
+                $itemData['item_status'] = $itemStatus;
 
                 $orderItem = OrderItem::create($itemData);
 
                 if ($orderItem->station === 'kitchen') {
                     KitchenTicket::create([
                         'order_item_id' => $orderItem->id,
-                        'status' => 'pending',
+                        'status' => $ticketStatus,
                     ]);
                 } else {
                     BarTicket::create([
                         'order_item_id' => $orderItem->id,
-                        'status' => 'pending',
+                        'status' => $ticketStatus,
                     ]);
                 }
             }
@@ -191,6 +194,14 @@ class WaiterOrderService
                 DiningTable::where('id', $tableId)->update([
                     'status' => 'occupied',
                 ]);
+            }
+
+            // For cashier-created orders, validate stock and deduct immediately.
+            // If any ingredient/direct stock is insufficient, exception is thrown
+            // and the whole transaction rolls back.
+            if ($isCashierOrder) {
+                $order->load('items.menuItem');
+                $this->inventoryDeductionService->deductForOrder($order, $authUserId);
             }
 
             return $order->load([

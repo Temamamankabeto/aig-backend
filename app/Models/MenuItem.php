@@ -22,7 +22,10 @@ class MenuItem extends Model
         'prep_minutes',
         'views_count',
         'is_featured',
-        'menu_mode', // normal | spatial
+        'menu_mode',
+        'has_ingredients',
+        'inventory_tracking_mode',
+        'direct_inventory_item_id',
     ];
 
     protected $casts = [
@@ -30,6 +33,7 @@ class MenuItem extends Model
         'is_available' => 'boolean',
         'is_active' => 'boolean',
         'is_featured' => 'boolean',
+        'has_ingredients' => 'boolean',
         'modifiers' => 'array',
         'prep_minutes' => 'integer',
         'views_count' => 'integer',
@@ -39,13 +43,9 @@ class MenuItem extends Model
         'views_count' => 0,
         'is_featured' => false,
         'menu_mode' => 'normal',
+        'has_ingredients' => true,
+        'inventory_tracking_mode' => 'recipe',
     ];
-
-    /*
-    |--------------------------------------------------------------------------
-    | Relationships
-    |--------------------------------------------------------------------------
-    */
 
     public function category()
     {
@@ -59,18 +59,14 @@ class MenuItem extends Model
 
     public function recipe()
     {
-        return $this->hasOne(Recipe::class, 'menu_item_id');
+        return $this->hasMany(Recipe::class, 'menu_item_id');
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Scopes
-    |--------------------------------------------------------------------------
-    */
+    public function directInventoryItem()
+    {
+        return $this->belongsTo(InventoryItem::class, 'direct_inventory_item_id');
+    }
 
-    /**
-     * Only active + available items
-     */
     public function scopeAvailable($query)
     {
         return $query
@@ -78,9 +74,6 @@ class MenuItem extends Model
             ->where('is_active', true);
     }
 
-    /**
-     * Filter by type (food / drink)
-     */
     public function scopeOfType($query, string $type)
     {
         return $query->where('type', $type);
@@ -96,39 +89,31 @@ class MenuItem extends Model
         return $query->where('type', 'drink');
     }
 
-    /**
-     * Only normal menu items
-     */
     public function scopeNormal($query)
     {
         return $query->where('menu_mode', 'normal');
     }
 
-    /**
-     * Only spatial menu items
-     */
     public function scopeSpatial($query)
     {
         return $query->where('menu_mode', 'spatial');
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Accessors
-    |--------------------------------------------------------------------------
-    */
+    public function scopeWithIngredients($query)
+    {
+        return $query->where('has_ingredients', true);
+    }
 
-    /**
-     * Formatted price
-     */
+    public function scopeWithoutIngredients($query)
+    {
+        return $query->where('has_ingredients', false);
+    }
+
     public function getFormattedPriceAttribute(): string
     {
         return number_format($this->price, 2);
     }
 
-    /**
-     * Full image URL
-     */
     public function getImageUrlAttribute(): ?string
     {
         return $this->image_path

@@ -21,10 +21,20 @@ class UpdateMenuItemRequest extends FormRequest
     {
         $merged = [];
 
-        foreach (['is_active', 'is_available', 'is_featured', 'remove_image'] as $field) {
+        foreach (['is_active', 'is_available', 'is_featured', 'remove_image', 'has_ingredients'] as $field) {
             if ($this->has($field)) {
                 $merged[$field] = $this->normalizeBoolean($this->input($field));
             }
+        }
+
+        if ($this->has('inventory_tracking_mode') && $this->input('inventory_tracking_mode') === '') {
+            $merged['inventory_tracking_mode'] = null;
+        }
+
+        if ($this->has('direct_inventory_item_id')) {
+            $merged['direct_inventory_item_id'] = $this->input('direct_inventory_item_id') === ''
+                ? null
+                : (int) $this->input('direct_inventory_item_id');
         }
 
         if ($this->has('category_id') && $this->input('category_id') !== '') {
@@ -69,17 +79,20 @@ class UpdateMenuItemRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'category_id'  => ['sometimes', 'required', 'integer', 'exists:menu_categories,id'],
-            'name'         => ['sometimes', 'required', 'string', 'max:255'],
-            'description'  => ['sometimes', 'nullable', 'string'],
-            'type'         => ['sometimes', 'required', Rule::in(['food', 'drink'])],
-            'price'        => ['sometimes', 'required', 'numeric', 'min:0'],
-            'image'        => ['sometimes', 'nullable', 'image', 'mimes:jpg,jpeg,png,webp,gif', 'max:4096'],
+            'category_id' => ['sometimes', 'required', 'integer', 'exists:menu_categories,id'],
+            'name' => ['sometimes', 'required', 'string', 'max:255'],
+            'description' => ['sometimes', 'nullable', 'string'],
+            'type' => ['sometimes', 'required', Rule::in(['food', 'drink'])],
+            'price' => ['sometimes', 'required', 'numeric', 'min:0'],
+            'image' => ['sometimes', 'nullable', 'image', 'mimes:jpg,jpeg,png,webp,gif', 'max:4096'],
             'is_available' => ['sometimes', 'nullable', 'boolean'],
-            'is_active'    => ['sometimes', 'nullable', 'boolean'],
-            'is_featured'  => ['sometimes', 'nullable', 'boolean'],
-            'menu_mode'    => ['sometimes', 'nullable', Rule::in(['normal', 'spatial'])],
-            'modifiers'    => ['sometimes', 'nullable'],
+            'is_active' => ['sometimes', 'nullable', 'boolean'],
+            'is_featured' => ['sometimes', 'nullable', 'boolean'],
+            'has_ingredients' => ['sometimes', 'nullable', 'boolean'],
+            'inventory_tracking_mode' => ['sometimes', 'nullable', Rule::in(['recipe', 'direct', 'none'])],
+            'direct_inventory_item_id' => ['sometimes', 'nullable', 'integer', 'exists:inventory_items,id'],
+            'menu_mode' => ['sometimes', 'nullable', Rule::in(['normal', 'spatial'])],
+            'modifiers' => ['sometimes', 'nullable'],
             'prep_minutes' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'remove_image' => ['sometimes', 'nullable', 'boolean'],
         ];

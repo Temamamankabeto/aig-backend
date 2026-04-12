@@ -37,8 +37,7 @@ class CashierOrderController extends Controller
             'waiter',
             'bill',
             'items.menuItem',
-        ])
-            ->latest('ordered_at');
+        ])->latest('ordered_at');
 
         if ($request->filled('search')) {
             $search = trim((string) $request->search);
@@ -179,26 +178,24 @@ class CashierOrderController extends Controller
     public function tables(Request $request)
     {
         $this->authorize('viewAny', Order::class);
-    
-        $query = DiningTable::query(); // removed is_active filter
-    
+
+        $query = DiningTable::query();
+
         if ($request->filled('search')) {
             $search = trim((string) $request->search);
-    
+
             $query->where(function ($q) use ($search) {
                 $q->where('table_number', 'like', "%{$search}%")
-                  ->orWhere('status', 'like', "%{$search}%")
-                  ->orWhere('section', 'like', "%{$search}%");
+                    ->orWhere('status', 'like', "%{$search}%")
+                    ->orWhere('section', 'like', "%{$search}%");
             });
         }
-    
-        // removed status filter completely
-    
+
         if ($request->filled('section')) {
             $section = trim((string) $request->section);
             $query->where('section', 'like', "%{$section}%");
         }
-    
+
         $tables = $query
             ->orderBy('table_number')
             ->get()
@@ -215,7 +212,7 @@ class CashierOrderController extends Controller
                 ];
             })
             ->values();
-    
+
         return response()->json([
             'success' => true,
             'message' => 'All tables fetched successfully',
@@ -250,11 +247,12 @@ class CashierOrderController extends Controller
         }
     }
 
-
-
     /**
      * Confirm a pending cashier order after 5 minutes and deduct inventory.
      * POST /cashier/orders/{id}/confirm
+     *
+     * Kept only for old pending orders created before the new cashier logic.
+     * New cashier orders should already be confirmed at creation time.
      */
     public function confirm($id)
     {
@@ -328,10 +326,10 @@ class CashierOrderController extends Controller
     public function cashierStore(StoreOrderRequest $request)
     {
         $this->authorize('create', Order::class);
-    
+
         try {
             $validated = $request->validated();
-    
+
             if (empty($validated['waiter_id'])) {
                 return response()->json([
                     'success' => false,
@@ -341,30 +339,37 @@ class CashierOrderController extends Controller
                     ],
                 ], 422);
             }
-    
+
             $validated['order_type'] = $validated['order_type'] ?? 'takeaway';
             $validated['table_id'] = $validated['order_type'] === 'dine_in'
                 ? ($validated['table_id'] ?? null)
                 : null;
-    
+
             $validated['customer_name'] = $validated['customer_name'] ?? 'Guest';
             $validated['customer_phone'] = $validated['customer_phone'] ?? null;
             $validated['customer_address'] = $validated['customer_address'] ?? null;
+
+            // This makes WaiterOrderService treat it as cashier order:
+            // - status confirmed
+            // - item_status confirmed
+            // - ticket status confirmed
+            // - stock checked and deducted immediately
             $validated['_source'] = 'cashier';
-    
+
             $order = $this->waiterOrderService->createOrder(
                 $validated,
                 (int) auth()->id()
             );
-    
+
             $order->load('bill');
-    
+
             return response()->json([
                 'success' => true,
-                'message' => 'Cashier order created successfully',
+                'message' => 'Cashier order created and confirmed successfully',
                 'data' => [
                     'id' => $order->id,
                     'order_number' => $order->order_number,
+                    'status' => $order->status,
                     'bill_id' => $order->bill->id ?? null,
                     'bill' => $order->bill ? [
                         'id' => $order->bill->id,
