@@ -59,7 +59,7 @@ class MenuItem extends Model
 
     public function recipe()
     {
-        return $this->hasOne(Recipe::class, 'menu_item_id');
+        return $this->hasMany(Recipe::class, 'menu_item_id');
     }
 
     public function directInventoryItem()
