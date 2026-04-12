@@ -10,7 +10,6 @@ use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\OrderItem;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class WaiterOrderService
@@ -24,11 +23,6 @@ class WaiterOrderService
     public function createOrder(array $data, int $authUserId): Order
     {
         return DB::transaction(function () use ($data, $authUserId) {
-            Log::info('WaiterOrderService::createOrder started.', [
-                'auth_user_id' => $authUserId,
-                'source' => $data['_source'] ?? 'waiter',
-            ]);
-
             $orderNumber = $this->orderNumberService->generate();
 
             $subtotal = 0.0;
@@ -37,11 +31,6 @@ class WaiterOrderService
             foreach (($data['items'] ?? []) as $item) {
                 $menuItemId = (int) ($item['menu_item_id'] ?? 0);
                 $quantity = (int) ($item['quantity'] ?? 0);
-
-                Log::info('Processing order item.', [
-                    'menu_item_id' => $menuItemId,
-                    'quantity' => $quantity,
-                ]);
 
                 if ($menuItemId <= 0) {
                     throw new RuntimeException('Invalid menu item.');
@@ -73,15 +62,6 @@ class WaiterOrderService
                     'notes' => is_string($itemNote) ? (trim($itemNote) ?: null) : null,
                     'modifiers' => is_array($itemModifiers) ? $itemModifiers : null,
                 ];
-
-                Log::info('Order item prepared.', [
-                    'menu_item_id' => $menuItem->id,
-                    'menu_item_name' => $menuItem->name,
-                    'unit_price' => $unitPrice,
-                    'line_total' => $lineTotal,
-                    'tracking_mode' => $menuItem->inventory_tracking_mode
-                        ?? ($menuItem->has_ingredients ? 'recipe' : 'none'),
-                ]);
             }
 
             if (empty($preparedItems)) {
@@ -102,14 +82,6 @@ class WaiterOrderService
             if ($total < 0) {
                 $total = 0;
             }
-
-            Log::info('Order totals calculated.', [
-                'subtotal' => $subtotal,
-                'tax' => $tax,
-                'service_charge' => $serviceCharge,
-                'discount' => $discount,
-                'total' => $total,
-            ]);
 
             $source = (string) ($data['_source'] ?? 'waiter');
             $isCashierOrder = $source === 'cashier';
@@ -166,14 +138,6 @@ class WaiterOrderService
                 ? (int) $data['waiter_id']
                 : $authUserId;
 
-            Log::info('Creating order header.', [
-                'order_number' => $orderNumber,
-                'order_type' => $orderType,
-                'table_id' => $tableId,
-                'waiter_id' => $waiterId,
-                'is_cashier_order' => $isCashierOrder,
-            ]);
-
             $order = Order::create([
                 'order_number' => $orderNumber,
                 'order_type' => $orderType,
@@ -210,15 +174,6 @@ class WaiterOrderService
                         'status' => $ticketStatus,
                     ]);
                 }
-
-                Log::info('Order item and station ticket created.', [
-                    'order_id' => $order->id,
-                    'order_item_id' => $orderItem->id,
-                    'menu_item_id' => $orderItem->menu_item_id,
-                    'station' => $orderItem->station,
-                    'item_status' => $orderItem->item_status,
-                    'ticket_status' => $ticketStatus,
-                ]);
             }
 
             Bill::create([
@@ -235,44 +190,18 @@ class WaiterOrderService
                 'issued_at' => $issuedAt,
             ]);
 
-            Log::info('Bill created for order.', [
-                'order_id' => $order->id,
-                'bill_number' => 'BILL-' . $orderNumber,
-                'bill_status' => $billStatus,
-            ]);
-
             if ($orderType === 'dine_in' && !empty($tableId)) {
                 DiningTable::where('id', $tableId)->update([
                     'status' => 'occupied',
                 ]);
-
-                Log::info('Dining table marked as occupied.', [
-                    'table_id' => $tableId,
-                    'order_id' => $order->id,
-                ]);
             }
-
-            Log::info('Checking if inventory deduction is required.', [
-                'order_id' => $order->id,
-                'is_cashier_order' => $isCashierOrder,
-            ]);
 
             // For cashier-created orders, validate stock and deduct immediately.
             // If any ingredient/direct stock is insufficient, exception is thrown
             // and the whole transaction rolls back.
             if ($isCashierOrder) {
                 $order->load('items.menuItem');
-
-                Log::info('Starting inventory deduction for cashier order.', [
-                    'order_id' => $order->id,
-                    'items_count' => $order->items->count(),
-                ]);
-
                 $this->inventoryDeductionService->deductForOrder($order, $authUserId);
-
-                Log::info('Inventory deduction completed for cashier order.', [
-                    'order_id' => $order->id,
-                ]);
             }
 
             return $order->load([
