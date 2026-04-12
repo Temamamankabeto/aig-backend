@@ -307,16 +307,6 @@ class PaymentService
             return;
         }
 
-        $alreadyDeducted = DB::table('inventory_transactions')
-            ->where('reference_type', 'order')
-            ->where('reference_id', $order->id)
-            ->where('type', 'out')
-            ->exists();
-
-        if (! $alreadyDeducted) {
-            $this->inventoryDeductionService->deductForOrder($order);
-        }
-
         if ($order->status !== 'completed') {
             $order->update([
                 'status' => 'completed',

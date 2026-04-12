@@ -766,9 +766,6 @@ class OrderController extends Controller
                 return response()->json(['success' => false, 'message' => 'Order must be SERVED'], 422);
             }
 
-            // ✅ Inventory deduction happens here
-            $svc->deductForOrder($order);
-
             $order->update([
                 'status' => 'completed',
                 'completed_at' => now(),

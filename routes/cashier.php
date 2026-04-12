@@ -31,6 +31,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/cashier/orders', [CashierOrderController::class, 'index']);
     Route::get('/cashier/orders/{id}', [CashierOrderController::class, 'show']);
     Route::post('/cashier/orders', [CashierOrderController::class, 'cashierStore']);
+    Route::post('/cashier/orders/{id}/confirm', [CashierOrderController::class, 'confirm']);
 
     /*
     |--------------------------------------------------------------------------

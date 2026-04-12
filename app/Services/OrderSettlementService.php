@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Models\Bill;
-use App\Models\InventoryTransaction;
 use Illuminate\Http\Request;
 
 class OrderSettlementService
@@ -36,15 +35,6 @@ class OrderSettlementService
                 $order->status = 'completed';
                 $order->completed_at = now();
                 $order->save();
-            }
-
-            $alreadyDeducted = InventoryTransaction::query()
-                ->where('reference_type', 'order')
-                ->where('reference_id', $order->id)
-                ->exists();
-
-            if (!$alreadyDeducted) {
-                $this->inventoryDeductionService->deductForOrder($order->fresh('items.menuItem'));
             }
 
             if ($order->order_type === 'dine_in' && $order->table_id && $order->table && $order->table->status !== 'available') {
