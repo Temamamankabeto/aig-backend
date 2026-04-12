@@ -26,10 +26,10 @@ class BarTicketController extends Controller
         ])->orderByDesc('id');
 
         if ($scope === 'today') {
-            $q->whereIn('status', ['pending', 'confirmed', 'preparing', 'delayed', 'ready'])
+            $q->whereIn('status', [ 'confirmed', 'preparing', 'ready'])
               ->whereDate('created_at', today());
         } elseif ($scope === 'all_open') {
-            $q->whereIn('status', ['pending', 'confirmed', 'preparing', 'delayed', 'ready']);
+            $q->whereIn('status', [ 'confirmed', 'preparing', 'ready']);
         }
 
         $tickets = $q->paginate((int) $request->query('per_page', 100));
@@ -54,6 +54,10 @@ class BarTicketController extends Controller
                 'status' => 'preparing',
                 'barman_id' => $request->user()->id,
                 'started_at' => now(),
+            ]);
+
+            $ticket->orderItem ->order->update([
+                'status' => 'in_progress',
             ]);
 
             $ticket->orderItem->update([
@@ -168,4 +172,79 @@ class BarTicketController extends Controller
             return response()->json(['success' => true, 'data' => $ticket]);
         });
     }
+
+
+    public function served(Request $request, $id)
+{
+    return DB::transaction(function () use ($request, $id) {
+
+        $ticket = BarTicket::lockForUpdate()
+            ->with('orderItem.order')
+            ->findOrFail($id);
+
+        $this->authorize('served', $ticket);
+
+        if ($ticket->status !== 'ready') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Ticket must be ready before serving.'
+            ], 422);
+        }
+
+        // Update ticket
+        $ticket->update([
+            'status' => 'served',
+        ]);
+
+        // Update order item
+        $ticket->orderItem->update([
+            'item_status' => 'served',
+            'served_at' => now(),
+        ]);
+
+        $order = $ticket->orderItem->order;
+
+        // Check if all order items served
+        $allServed = $order->items()
+            ->whereNotIn('item_status', ['cancelled', 'rejected'])
+            ->where('item_status', '!=', 'served')
+            ->doesntExist();
+
+        if ($allServed) {
+            $order->update([
+                'status' => 'served',
+            ]);
+        }
+
+        // Notify waiter
+        $this->notificationService->notifyUser(
+            $order->waiter_id,
+            'Bar item served',
+            "Bar items for order {$order->order_number} have been served.",
+            [
+                'kind' => 'bar_served',
+                'order_id' => $order->id,
+                'ticket_id' => $ticket->id,
+                'order_number' => $order->order_number
+            ]
+        );
+
+        // Audit log
+        $this->auditLogger->log(
+            $request,
+            $request->user()?->id,
+            'BarTicket',
+            $ticket->id,
+            'bar_ticket_served',
+            null,
+            $ticket->toArray(),
+            'Bar ticket marked served.'
+        );
+
+        return response()->json([
+            'success' => true,
+            'data' => $ticket->fresh()->load('orderItem.order')
+        ]);
+    });
+}
 }

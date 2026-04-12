@@ -13,4 +13,5 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/bar/tickets/{id}/ready', [BarTicketController::class, 'ready']);
     Route::post('/bar/tickets/{id}/delay', [BarTicketController::class, 'delay']);
     Route::post('/bar/tickets/{id}/reject', [BarTicketController::class, 'reject']);
+    Route::post('/bar/tickets/{id}/served', [BarTicketController::class, 'served']);
 });
