@@ -153,60 +153,60 @@ class MenuItemController extends Controller
     public function index(Request $request)
     {
         $this->authorize('viewAny', MenuItem::class);
-
-        $q = MenuItem::query()->with(['category', 'directInventoryItem']);
-
+    
+        $q = MenuItem::query()->with([
+            'category',
+            'directInventoryItem',
+            'recipe.items.inventoryItem'
+        ]);
+    
         if ($request->filled('search')) {
             $term = trim((string) $request->query('search'));
-
+    
             if ($term !== '') {
                 $q->where(function ($qq) use ($term) {
                     $qq->where('name', 'like', "%{$term}%")
-                        ->orWhere('description', 'like', "%{$term}%");
+                       ->orWhere('description', 'like', "%{$term}%");
                 });
             }
         }
-
+    
         if ($request->filled('type') && in_array($request->query('type'), ['food', 'drink'], true)) {
             $q->where('type', $request->query('type'));
         }
-
+    
         if ($request->filled('category_id') && is_numeric($request->query('category_id'))) {
             $q->where('category_id', (int) $request->query('category_id'));
         }
-
+    
         if ($request->filled('menu_mode') && in_array($request->query('menu_mode'), ['normal', 'spatial'], true)) {
             $q->where('menu_mode', $request->query('menu_mode'));
         }
-
+    
         if ($request->filled('has_ingredients')) {
             $q->where('has_ingredients', $request->boolean('has_ingredients'));
         }
-
+    
         if ($request->filled('is_active')) {
             $q->where('is_active', $request->boolean('is_active'));
         }
-
+    
         if ($request->filled('is_available')) {
             $q->where('is_available', $request->boolean('is_available'));
         }
-
+    
         if ($request->filled('is_featured')) {
             $q->where('is_featured', $request->boolean('is_featured'));
         }
-
+    
         $perPage = (int) $request->query('per_page', 10);
         $perPage = max(5, min($perPage, 100));
-
+    
         $page = $q->orderByDesc('id')->paginate($perPage);
-
-        $items = collect($page->items())
-            ->map(fn ($item) => $this->transformItem($item, true))
-            ->values();
-
+    
         return response()->json([
             'success' => true,
-            'data' => $items,
+            'data' => $page->items(),
             'meta' => [
                 'current_page' => $page->currentPage(),
                 'last_page' => $page->lastPage(),
