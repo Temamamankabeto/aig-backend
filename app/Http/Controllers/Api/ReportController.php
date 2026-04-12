@@ -139,7 +139,7 @@ class ReportController extends Controller
                 ii.unit as unit,
                 it.type,
                 SUM(it.quantity) as total_qty,
-                SUM(it.quantity * COALESCE(it.unit_cost, ii.unit_cost)) as cost_sum
+                SUM(it.quantity * COALESCE(it.unit_cost, ii.average_purchase_price)) as cost_sum
             ')
             ->groupBy('ii.id','ii.name','ii.unit','it.type')
             ->orderByDesc('cost_sum')

@@ -19,6 +19,7 @@ class MenuItemController extends Controller
         $type = $request->query('type');
         $categoryId = $request->query('category_id');
         $menuMode = $request->query('menu_mode');
+        $hasIngredients = $request->query('has_ingredients');
 
         $perPage = (int) $request->query('per_page', 20);
         $perPage = max(1, min($perPage, 100));
@@ -27,7 +28,7 @@ class MenuItemController extends Controller
         $page = max(1, $page);
 
         $query = MenuItem::query()
-            ->with(['category:id,name,type'])
+            ->with(['category:id,name,type', 'directInventoryItem:id,name,unit,current_stock'])
             ->where('is_active', true)
             ->where('is_available', true)
             ->orderBy('name');
@@ -51,6 +52,10 @@ class MenuItemController extends Controller
             $query->where('menu_mode', $menuMode);
         }
 
+        if ($request->filled('has_ingredients')) {
+            $query->where('has_ingredients', filter_var($hasIngredients, FILTER_VALIDATE_BOOLEAN));
+        }
+
         $paginatedItems = $query->paginate($perPage, ['*'], 'page', $page);
 
         $items = $paginatedItems->getCollection()
@@ -70,6 +75,7 @@ class MenuItemController extends Controller
                     'type' => $type,
                     'category_id' => $categoryId,
                     'menu_mode' => $menuMode,
+                    'has_ingredients' => $hasIngredients,
                 ],
             ],
         ]);
@@ -94,7 +100,7 @@ class MenuItemController extends Controller
         $q = MenuItem::query()
             ->where('is_active', true)
             ->where('is_available', true)
-            ->with('category:id,name')
+            ->with(['category:id,name', 'directInventoryItem:id,name,unit,current_stock'])
             ->orderBy('name');
 
         if ($request->filled('type') && in_array($request->query('type'), ['food', 'drink'], true)) {
@@ -107,6 +113,10 @@ class MenuItemController extends Controller
 
         if ($request->filled('menu_mode') && in_array($request->query('menu_mode'), ['normal', 'spatial'], true)) {
             $q->where('menu_mode', $request->query('menu_mode'));
+        }
+
+        if ($request->filled('has_ingredients')) {
+            $q->where('has_ingredients', $request->boolean('has_ingredients'));
         }
 
         if ($request->filled('q')) {
@@ -133,6 +143,7 @@ class MenuItemController extends Controller
                     'type' => $request->query('type'),
                     'category_id' => $request->query('category_id'),
                     'menu_mode' => $request->query('menu_mode'),
+                    'has_ingredients' => $request->query('has_ingredients'),
                     'q' => $request->query('q'),
                 ],
             ],
@@ -143,7 +154,7 @@ class MenuItemController extends Controller
     {
         $this->authorize('viewAny', MenuItem::class);
 
-        $q = MenuItem::query()->with('category');
+        $q = MenuItem::query()->with(['category', 'directInventoryItem']);
 
         if ($request->filled('search')) {
             $term = trim((string) $request->query('search'));
@@ -166,6 +177,10 @@ class MenuItemController extends Controller
 
         if ($request->filled('menu_mode') && in_array($request->query('menu_mode'), ['normal', 'spatial'], true)) {
             $q->where('menu_mode', $request->query('menu_mode'));
+        }
+
+        if ($request->filled('has_ingredients')) {
+            $q->where('has_ingredients', $request->boolean('has_ingredients'));
         }
 
         if ($request->filled('is_active')) {
@@ -203,7 +218,7 @@ class MenuItemController extends Controller
 
     public function show($id)
     {
-        $item = MenuItem::with('category')->findOrFail($id);
+        $item = MenuItem::with(['category', 'directInventoryItem'])->findOrFail($id);
         $this->authorize('view', $item);
 
         return response()->json([
@@ -214,7 +229,7 @@ class MenuItemController extends Controller
 
     public function showPublic($id)
     {
-        $item = MenuItem::with('category')
+        $item = MenuItem::with(['category', 'directInventoryItem'])
             ->where('is_active', true)
             ->where('is_available', true)
             ->findOrFail($id);
@@ -368,7 +383,7 @@ class MenuItemController extends Controller
 
     protected function normalizePayload(array $data): array
     {
-        foreach (['is_available', 'is_active', 'is_featured', 'remove_image'] as $field) {
+        foreach (['is_available', 'is_active', 'is_featured', 'remove_image', 'has_ingredients'] as $field) {
             if (array_key_exists($field, $data)) {
                 $data[$field] = filter_var($data[$field], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
             }
@@ -387,6 +402,20 @@ class MenuItemController extends Controller
         if (array_key_exists('modifiers', $data) && is_string($data['modifiers'])) {
             $decoded = json_decode($data['modifiers'], true);
             $data['modifiers'] = json_last_error() === JSON_ERROR_NONE ? $decoded : null;
+        }
+
+        if (array_key_exists('inventory_tracking_mode', $data) && ($data['inventory_tracking_mode'] === null || $data['inventory_tracking_mode'] === '')) {
+            $data['inventory_tracking_mode'] = !empty($data['has_ingredients']) ? 'recipe' : 'none';
+        }
+
+        if (($data['inventory_tracking_mode'] ?? null) === 'recipe') {
+            $data['has_ingredients'] = true;
+            $data['direct_inventory_item_id'] = null;
+        } elseif (($data['inventory_tracking_mode'] ?? null) === 'direct') {
+            $data['has_ingredients'] = false;
+        } elseif (($data['inventory_tracking_mode'] ?? null) === 'none') {
+            $data['has_ingredients'] = false;
+            $data['direct_inventory_item_id'] = null;
         }
 
         return $data;
@@ -418,6 +447,15 @@ class MenuItemController extends Controller
             'is_active' => (bool) $item->is_active,
             'is_featured' => (bool) ($item->is_featured ?? false),
             'menu_mode' => $item->menu_mode,
+            'has_ingredients' => (bool) ($item->has_ingredients ?? true),
+            'inventory_tracking_mode' => $item->inventory_tracking_mode ?? ((bool) ($item->has_ingredients ?? true) ? 'recipe' : 'none'),
+            'direct_inventory_item_id' => $item->direct_inventory_item_id,
+            'direct_inventory_item' => $item->directInventoryItem ? [
+                'id' => $item->directInventoryItem->id,
+                'name' => $item->directInventoryItem->name,
+                'unit' => $item->directInventoryItem->unit,
+                'current_stock' => (float) $item->directInventoryItem->current_stock,
+            ] : null,
             'prep_minutes' => $item->prep_minutes,
             'modifiers' => $item->modifiers,
             'views_count' => (int) ($item->views_count ?? 0),
@@ -434,7 +472,6 @@ class MenuItemController extends Controller
         } else {
             $data['category'] = $item->category?->name;
         }
-
         return $data;
     }
 }

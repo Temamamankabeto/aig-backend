@@ -54,22 +54,19 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
         Route::delete('/{id}', [MenuCategoryController::class, 'destroy']);
     });
 
-    // Menu Items
+ // Admin menu items
 Route::get('/menu/items', [MenuItemController::class, 'index']);
 Route::get('/menu/items/{id}', [MenuItemController::class, 'show']);
 Route::post('/menu/items', [MenuItemController::class, 'store']);
-
 Route::put('/menu/items/{id}', [MenuItemController::class, 'update']);
 Route::patch('/menu/items/{id}', [MenuItemController::class, 'update']);
-
-// form-data fallback update (image upload support)
-Route::post('/menu/items/{id}', [MenuItemController::class, 'update']);
+Route::post('/menu/items/{id}', [MenuItemController::class, 'update']); // optional fallback
+Route::delete('/menu/items/{id}', [MenuItemController::class, 'destroy']);
 
 Route::patch('/menu/items/{id}/toggle', [MenuItemController::class, 'toggleActive']);
 Route::patch('/menu/items/{id}/availability', [MenuItemController::class, 'setAvailability']);
 Route::patch('/menu/items/{id}/spatial', [MenuItemController::class, 'setSpatial']);
 Route::patch('/menu/items/{id}/normal', [MenuItemController::class, 'setNormal']);
-
 Route::post('/menu/items/{id}/image', [MenuItemController::class, 'uploadImage']);
 
     // Roles
