@@ -21,16 +21,20 @@ class WaiterOrderService
     }
 
     public function createOrder(array $data, int $authUserId): Order
-    {
+{
+    try {
+
         return DB::transaction(function () use ($data, $authUserId) {
+
             $orderNumber = $this->orderNumberService->generate();
 
             $subtotal = 0.0;
             $preparedItems = [];
 
             foreach (($data['items'] ?? []) as $item) {
+
                 $menuItemId = (int) ($item['menu_item_id'] ?? 0);
-                $quantity = (int) ($item['quantity'] ?? 0);
+                $quantity   = (int) ($item['quantity'] ?? 0);
 
                 if ($menuItemId <= 0) {
                     throw new RuntimeException('Invalid menu item.');
@@ -48,19 +52,20 @@ class WaiterOrderService
 
                 $unitPrice = round((float) $menuItem->price, 2);
                 $lineTotal = round($unitPrice * $quantity, 2);
+
                 $subtotal += $lineTotal;
 
-                $itemNote = $item['notes'] ?? $item['note'] ?? null;
+                $itemNote      = $item['notes'] ?? $item['note'] ?? null;
                 $itemModifiers = $item['modifiers'] ?? null;
 
                 $preparedItems[] = [
                     'menu_item_id' => $menuItem->id,
-                    'quantity' => $quantity,
-                    'unit_price' => $unitPrice,
-                    'line_total' => $lineTotal,
-                    'station' => $menuItem->type === 'food' ? 'kitchen' : 'bar',
-                    'notes' => is_string($itemNote) ? (trim($itemNote) ?: null) : null,
-                    'modifiers' => is_array($itemModifiers) ? $itemModifiers : null,
+                    'quantity'     => $quantity,
+                    'unit_price'   => $unitPrice,
+                    'line_total'   => $lineTotal,
+                    'station'      => $menuItem->type === 'food' ? 'kitchen' : 'bar',
+                    'notes'        => is_string($itemNote) ? (trim($itemNote) ?: null) : null,
+                    'modifiers'    => is_array($itemModifiers) ? $itemModifiers : null,
                 ];
             }
 
@@ -87,16 +92,13 @@ class WaiterOrderService
             $isCashierOrder = $source === 'cashier';
 
             $orderType = (string) ($data['order_type'] ?? 'dine_in');
+
             $tableId = $orderType === 'dine_in'
                 ? (!empty($data['table_id']) ? (int) $data['table_id'] : null)
                 : null;
 
             if ($orderType === 'dine_in' && empty($tableId)) {
                 throw new RuntimeException('Table is required for dine-in orders.');
-            }
-
-            if ($orderType !== 'dine_in') {
-                $tableId = null;
             }
 
             if ($orderType === 'delivery' && empty($data['customer_address'])) {
@@ -111,64 +113,48 @@ class WaiterOrderService
                     ->firstOrFail();
             }
 
-            $orderStatus = $isCashierOrder ? 'confirmed' : 'pending';
-            $itemStatus = $isCashierOrder ? 'confirmed' : 'pending';
+            $orderStatus  = $isCashierOrder ? 'confirmed' : 'pending';
+            $itemStatus   = $isCashierOrder ? 'confirmed' : 'pending';
             $ticketStatus = $isCashierOrder ? 'confirmed' : 'pending';
 
             $billStatus = 'issued';
-            $issuedAt = $isCashierOrder ? now() : null;
-
-            $customerName = isset($data['customer_name'])
-                ? (trim((string) $data['customer_name']) ?: 'Guest')
-                : 'Guest';
-
-            $customerPhone = isset($data['customer_phone'])
-                ? (trim((string) $data['customer_phone']) ?: null)
-                : null;
-
-            $customerAddress = isset($data['customer_address'])
-                ? (trim((string) $data['customer_address']) ?: null)
-                : null;
-
-            $orderNotes = isset($data['notes'])
-                ? (trim((string) $data['notes']) ?: null)
-                : null;
-
-            $waiterId = !empty($data['waiter_id'])
-                ? (int) $data['waiter_id']
-                : $authUserId;
+            $issuedAt   = $isCashierOrder ? now() : null;
 
             $order = Order::create([
                 'order_number' => $orderNumber,
-                'order_type' => $orderType,
-                'table_id' => $tableId,
-                'created_by' => $authUserId,
-                'waiter_id' => $waiterId,
-                'customer_name' => $customerName,
-                'customer_phone' => $customerPhone,
-                'customer_address' => $customerAddress,
-                'status' => $orderStatus,
-                'subtotal' => $subtotal,
-                'tax' => $tax,
-                'service_charge' => $serviceCharge,
-                'discount' => $discount,
-                'total' => $total,
-                'notes' => $orderNotes,
-                'ordered_at' => now(),
+                'order_type'   => $orderType,
+                'table_id'     => $tableId,
+                'created_by'   => $authUserId,
+                'waiter_id'    => !empty($data['waiter_id']) ? (int) $data['waiter_id'] : $authUserId,
+                'customer_name'    => trim($data['customer_name'] ?? 'Guest'),
+                'customer_phone'   => trim($data['customer_phone'] ?? '') ?: null,
+                'customer_address' => trim($data['customer_address'] ?? '') ?: null,
+                'status'       => $orderStatus,
+                'subtotal'     => $subtotal,
+                'tax'          => $tax,
+                'service_charge'=> $serviceCharge,
+                'discount'     => $discount,
+                'total'        => $total,
+                'notes'        => trim($data['notes'] ?? '') ?: null,
+                'ordered_at'   => now(),
             ]);
 
             foreach ($preparedItems as $itemData) {
+
                 $itemData['order_id'] = $order->id;
                 $itemData['item_status'] = $itemStatus;
 
                 $orderItem = OrderItem::create($itemData);
 
                 if ($orderItem->station === 'kitchen') {
+
                     KitchenTicket::create([
                         'order_item_id' => $orderItem->id,
                         'status' => $ticketStatus,
                     ]);
+
                 } else {
+
                     BarTicket::create([
                         'order_item_id' => $orderItem->id,
                         'status' => $ticketStatus,
@@ -196,9 +182,6 @@ class WaiterOrderService
                 ]);
             }
 
-            // For cashier-created orders, validate stock and deduct immediately.
-            // If any ingredient/direct stock is insufficient, exception is thrown
-            // and the whole transaction rolls back.
             if ($isCashierOrder) {
                 $order->load('items.menuItem');
                 $this->inventoryDeductionService->deductForOrder($order, $authUserId);
@@ -212,5 +195,17 @@ class WaiterOrderService
                 'bill',
             ]);
         });
+
+    } catch (\Throwable $e) {
+
+        Log::error('Order creation failed', [
+            'message' => $e->getMessage(),
+            'trace' => $e->getTraceAsString(),
+            'user_id' => $authUserId,
+            'payload' => $data,
+        ]);
+
+        throw new RuntimeException($e->getMessage());
     }
+}
 }
