@@ -19,13 +19,45 @@ class KitchenTicketController extends Controller
     public function index(Request $request)
     {
         $q = KitchenTicket::query()
-            ->with(['orderItem.order','orderItem.menuItem','chef'])
-            ->orderBy('id','desc');
-
-        if ($request->filled('status')) $q->where('status', $request->status);
-
-        $rows = $q->paginate((int)($request->get('per_page', 20)));
-        return response()->json(['success' => true, 'data' => $rows]);
+            ->with([
+                'orderItem.order.table',
+                'orderItem.order.waiter',
+                'orderItem.menuItem',
+                'chef',
+            ])
+            ->orderByDesc('id');
+    
+        if ($request->filled('status')) {
+            $q->where('status', $request->status);
+        }
+    
+        $rows = $q->paginate((int) ($request->get('per_page', 20)));
+    
+        $rows->getCollection()->transform(function ($ticket) {
+            return [
+                'kitchen_ticket_id' => $ticket->id,
+                'ticket_status' => $ticket->status,
+    
+                'order_id' => $ticket->orderItem?->order?->id,
+                'order_number' => $ticket->orderItem?->order?->order_number,
+    
+                'order_item_id' => $ticket->orderItem?->id,
+                'item_name' => $ticket->orderItem?->menuItem?->name,
+                'quantity' => $ticket->orderItem?->quantity,
+                'order_item_status' => $ticket->orderItem?->item_status,
+                'note' => $ticket->orderItem?->notes,
+    
+                'waiter_name' => $ticket->orderItem?->order?->waiter?->name,
+                'table_number' => $ticket->orderItem?->order?->table?->table_number
+                    ?? $ticket->orderItem?->order?->table?->name
+                    ?? null,
+            ];
+        });
+    
+        return response()->json([
+            'success' => true,
+            'data' => $rows,
+        ]);
     }
 
     public function accept(Request $request, $id)
