@@ -14,6 +14,6 @@ class KitchenTicketPolicy
     public function update(User $user, KitchenTicket $model): bool { return $this->allows($user, 'kds.kitchen'); }
     public function accept(User $user, KitchenTicket $model): bool { return $this->allows($user, 'kds.kitchen'); }
     public function ready(User $user, KitchenTicket $model): bool { return $this->allows($user, 'kds.kitchen'); }
-    public function delay(User $user, KitchenTicket $model): bool { return $this->allows($user, 'kds.kitchen'); }
+    public function served(User $user, KitchenTicket $model): bool { return $this->allows($user, 'kds.kitchen'); }
     public function reject(User $user, KitchenTicket $model): bool { return $this->allows($user, 'kds.kitchen'); }
 }

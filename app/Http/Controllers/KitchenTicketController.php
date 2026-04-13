@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\KitchenTicket;
 use App\Services\AuditLogger;
 use App\Services\NotificationService;
+use App\Services\OrderStatusService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -19,17 +20,17 @@ class KitchenTicketController extends Controller
     public function index(Request $request)
     {
         $perPage = (int) $request->get('per_page', 20);
-    
+
         if ($perPage <= 0) {
             $perPage = 20;
         }
-    
+
         $statusSummary = [
             'confirmed' => KitchenTicket::where('status', 'confirmed')->count(),
             'preparing' => KitchenTicket::where('status', 'preparing')->count(),
             'ready' => KitchenTicket::where('status', 'ready')->count(),
         ];
-    
+
         $q = KitchenTicket::query()
             ->with([
                 'orderItem.order.table',
@@ -38,36 +39,36 @@ class KitchenTicketController extends Controller
                 'chef',
             ])
             ->orderByDesc('id');
-    
+
         if ($request->filled('status')) {
             $q->where('status', $request->status);
         }
-    
+
         $rows = $q->paginate($perPage);
-    
+
         $data = $rows->getCollection()->transform(function ($ticket) {
             return [
                 'kitchen_ticket_id' => $ticket->id,
                 'ticket_status' => $ticket->status,
-    
+
                 'order_id' => $ticket->orderItem?->order?->id,
                 'order_number' => $ticket->orderItem?->order?->order_number,
-                'order_type' => $ticket->orderItem?->order?->order_type, // ✅ added here
-    
+                'order_type' => $ticket->orderItem?->order?->order_type,
+
                 'order_item_id' => $ticket->orderItem?->id,
                 'item_name' => $ticket->orderItem?->menuItem?->name,
                 'image_path' => $ticket->orderItem?->menuItem?->image_path,
                 'quantity' => $ticket->orderItem?->quantity,
                 'order_item_status' => $ticket->orderItem?->item_status,
                 'note' => $ticket->orderItem?->notes,
-    
+
                 'waiter_name' => $ticket->orderItem?->order?->waiter?->name,
                 'table_number' => $ticket->orderItem?->order?->table?->table_number
                     ?? $ticket->orderItem?->order?->table?->name
                     ?? null,
             ];
         })->values();
-    
+
         return response()->json([
             'success' => true,
             'data' => $data,
@@ -90,10 +91,10 @@ class KitchenTicketController extends Controller
 
             $this->authorize('accept', $ticket);
 
-            if ($ticket->status !== 'pending' && $ticket->status !== 'confirmed') {
+            if (! in_array($ticket->status, ['pending', 'confirmed'], true)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Ticket not pending'
+                    'message' => 'Ticket not pending',
                 ], 422);
             }
 
@@ -108,9 +109,8 @@ class KitchenTicketController extends Controller
                 'started_at' => now(),
             ]);
 
-            $ticket->orderItem->order->update([
-                'status' => 'in_progress',
-            ]);
+            $order = $ticket->orderItem->order;
+            OrderStatusService::recalc($order->id);
 
             $this->auditLogger->log(
                 $request,
@@ -125,7 +125,7 @@ class KitchenTicketController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => $ticket->fresh()->load('orderItem.order')
+                'data' => $ticket->fresh()->load('orderItem.order'),
             ]);
         });
     }
@@ -139,10 +139,10 @@ class KitchenTicketController extends Controller
 
             $this->authorize('ready', $ticket);
 
-            if (!in_array($ticket->status, ['preparing', 'confirmed', 'delayed'], true)) {
+            if (! in_array($ticket->status, ['preparing', 'confirmed', 'delayed'], true)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Ticket not preparing'
+                    'message' => 'Ticket not preparing',
                 ], 422);
             }
 
@@ -157,17 +157,7 @@ class KitchenTicketController extends Controller
             ]);
 
             $order = $ticket->orderItem->order;
-
-            $allReady = $order->items()
-                ->whereNotIn('item_status', ['cancelled', 'rejected'])
-                ->where('item_status', '!=', 'ready')
-                ->doesntExist();
-
-            if ($allReady && in_array($order->status, ['confirmed', 'in_progress'], true)) {
-                $order->update([
-                    'status' => 'ready',
-                ]);
-            }
+            OrderStatusService::recalc($order->id);
 
             $this->notificationService->notifyUser(
                 $order->waiter_id,
@@ -194,7 +184,7 @@ class KitchenTicketController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => $ticket->fresh()->load('orderItem.order')
+                'data' => $ticket->fresh()->load('orderItem.order'),
             ]);
         });
     }
@@ -211,7 +201,7 @@ class KitchenTicketController extends Controller
             if ($ticket->status !== 'ready') {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Ticket must be ready before serving.'
+                    'message' => 'Ticket must be ready before serving.',
                 ], 422);
             }
 
@@ -225,17 +215,7 @@ class KitchenTicketController extends Controller
             ]);
 
             $order = $ticket->orderItem->order;
-
-            $allServed = $order->items()
-                ->whereNotIn('item_status', ['cancelled', 'rejected'])
-                ->where('item_status', '!=', 'served')
-                ->doesntExist();
-
-            if ($allServed) {
-                $order->update([
-                    'status' => 'served',
-                ]);
-            }
+            OrderStatusService::recalc($order->id);
 
             $this->notificationService->notifyUser(
                 $order->waiter_id,
@@ -262,7 +242,7 @@ class KitchenTicketController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => $ticket->fresh()->load('orderItem.order')
+                'data' => $ticket->fresh()->load('orderItem.order'),
             ]);
         });
     }
