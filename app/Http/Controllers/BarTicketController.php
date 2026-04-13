@@ -19,24 +19,65 @@ class BarTicketController extends Controller
     public function index(Request $request)
     {
         $scope = $request->query('scope', 'today');
-
-        $q = BarTicket::with([
-            'orderItem.order',
-            'orderItem.menuItem',
-        ])->orderByDesc('id');
-
+    
+        $perPage = (int) $request->query('per_page', 20);
+    
+        if ($perPage <= 0) {
+            $perPage = 20;
+        }
+    
+        $q = BarTicket::query()
+            ->with([
+                'orderItem.order.table',
+                'orderItem.order.waiter',
+                'orderItem.menuItem',
+            ])
+            ->orderByDesc('id');
+    
         if ($scope === 'today') {
-            $q->whereIn('status', [ 'confirmed', 'preparing', 'ready'])
+            $q->whereIn('status', ['confirmed', 'preparing', 'ready'])
               ->whereDate('created_at', today());
         } elseif ($scope === 'all_open') {
-            $q->whereIn('status', [ 'confirmed', 'preparing', 'ready']);
+            $q->whereIn('status', ['confirmed', 'preparing', 'ready']);
         }
-
-        $tickets = $q->paginate((int) $request->query('per_page', 100));
-
+    
+        if ($request->filled('status')) {
+            $q->where('status', $request->status);
+        }
+    
+        $rows = $q->paginate($perPage);
+    
+        $data = $rows->getCollection()->transform(function ($ticket) {
+            return [
+                'bar_ticket_id' => $ticket->id,
+                'ticket_status' => $ticket->status,
+    
+                'order_id' => $ticket->orderItem?->order?->id,
+                'order_number' => $ticket->orderItem?->order?->order_number,
+    
+                'order_item_id' => $ticket->orderItem?->id,
+                'item_name' => $ticket->orderItem?->menuItem?->name,
+                'image_path' => $ticket->orderItem?->menuItem?->image_path,
+                'quantity' => $ticket->orderItem?->quantity,
+                'order_item_status' => $ticket->orderItem?->item_status,
+                'note' => $ticket->orderItem?->notes,
+    
+                'waiter_name' => $ticket->orderItem?->order?->waiter?->name,
+                'table_number' => $ticket->orderItem?->order?->table?->table_number
+                    ?? $ticket->orderItem?->order?->table?->name
+                    ?? null,
+            ];
+        })->values();
+    
         return response()->json([
             'success' => true,
-            'data' => $tickets,
+            'data' => $data,
+            'meta' => [
+                'current_page' => $rows->currentPage(),
+                'per_page' => $rows->perPage(),
+                'total' => $rows->total(),
+                'last_page' => $rows->lastPage(),
+            ],
         ]);
     }
 
