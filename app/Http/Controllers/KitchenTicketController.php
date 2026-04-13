@@ -25,6 +25,8 @@ class KitchenTicketController extends Controller
             $perPage = 20;
         }
     
+        $search = trim((string) $request->get('search', ''));
+    
         $statusSummary = [
             'confirmed' => KitchenTicket::where('status', 'confirmed')->count(),
             'preparing' => KitchenTicket::where('status', 'preparing')->count(),
@@ -44,6 +46,16 @@ class KitchenTicketController extends Controller
     
         if ($request->filled('status')) {
             $q->where('status', $request->status);
+        }
+    
+        if ($search !== '') {
+            $q->where(function ($query) use ($search) {
+                $query->whereHas('orderItem.order', function ($orderQuery) use ($search) {
+                    $orderQuery->where('order_number', 'like', "%{$search}%");
+                })->orWhereHas('orderItem.order.waiter', function ($waiterQuery) use ($search) {
+                    $waiterQuery->where('name', 'like', "%{$search}%");
+                });
+            });
         }
     
         $rows = $q->paginate($perPage);
