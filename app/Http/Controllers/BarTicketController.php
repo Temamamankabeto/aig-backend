@@ -19,13 +19,18 @@ class BarTicketController extends Controller
 
     public function index(Request $request)
     {
-        $scope = $request->query('scope', 'today');
-    
-        $perPage = (int) $request->query('per_page', 20);
+        $perPage = (int) $request->get('per_page', 20);
     
         if ($perPage <= 0) {
             $perPage = 20;
         }
+    
+        $statusSummary = [
+            'confirmed' => BarTicket::where('status', 'confirmed')->count(),
+            'preparing' => BarTicket::where('status', 'preparing')->count(),
+            'ready' => BarTicket::where('status', 'ready')->count(),
+            'served' => BarTicket::where('status', 'served')->count(),
+        ];
     
         $q = BarTicket::query()
             ->with([
@@ -33,37 +38,12 @@ class BarTicketController extends Controller
                 'orderItem.order.waiter',
                 'orderItem.menuItem',
             ])
+            ->where('status', '!=', 'served')
             ->orderByDesc('id');
     
-        if ($scope === 'today') {
-            $q->whereIn('status', ['confirmed', 'preparing', 'ready'])
-                ->whereDate('created_at', today());
-        } elseif ($scope === 'all_open') {
-            $q->whereIn('status', ['confirmed', 'preparing', 'ready']);
-        } else {
-            $q->whereIn('status', ['confirmed', 'preparing', 'ready']);
-        }
-    
         if ($request->filled('status')) {
-            $status = $request->status;
-    
-            if (in_array($status, ['confirmed', 'preparing', 'ready'], true)) {
-                $q->where('status', $status);
-            }
+            $q->where('status', $request->status);
         }
-    
-        $statusQuery = BarTicket::query()
-            ->whereIn('status', ['confirmed', 'preparing', 'ready']);
-    
-        if ($scope === 'today') {
-            $statusQuery->whereDate('created_at', today());
-        }
-    
-        $statusSummary = [
-            'confirmed' => (clone $statusQuery)->where('status', 'confirmed')->count(),
-            'preparing' => (clone $statusQuery)->where('status', 'preparing')->count(),
-            'ready' => (clone $statusQuery)->where('status', 'ready')->count(),
-        ];
     
         $rows = $q->paginate($perPage);
     
