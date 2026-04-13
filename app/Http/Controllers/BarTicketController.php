@@ -38,11 +38,15 @@ class BarTicketController extends Controller
                 'orderItem.order.waiter',
                 'orderItem.menuItem',
             ])
-            ->where('status', '!=', 'served')
+            ->whereNotIn('status', ['served', 'pending']) // exclude both
             ->orderByDesc('id');
     
         if ($request->filled('status')) {
-            $q->where('status', $request->status);
+            $status = $request->status;
+    
+            if (!in_array($status, ['served', 'pending'], true)) {
+                $q->where('status', $status);
+            }
         }
     
         $rows = $q->paginate($perPage);
