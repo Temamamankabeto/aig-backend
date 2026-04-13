@@ -18,6 +18,12 @@ class KitchenTicketController extends Controller
 
     public function index(Request $request)
     {
+        $perPage = (int) $request->get('per_page', 20);
+    
+        if ($perPage <= 0) {
+            $perPage = 20;
+        }
+    
         $q = KitchenTicket::query()
             ->with([
                 'orderItem.order.table',
@@ -31,9 +37,9 @@ class KitchenTicketController extends Controller
             $q->where('status', $request->status);
         }
     
-        $rows = $q->paginate((int) ($request->get('per_page', 20)));
+        $rows = $q->paginate($perPage);
     
-        $rows->getCollection()->transform(function ($ticket) {
+        $data = $rows->getCollection()->transform(function ($ticket) {
             return [
                 'kitchen_ticket_id' => $ticket->id,
                 'ticket_status' => $ticket->status,
@@ -43,6 +49,7 @@ class KitchenTicketController extends Controller
     
                 'order_item_id' => $ticket->orderItem?->id,
                 'item_name' => $ticket->orderItem?->menuItem?->name,
+                'image_path' => $ticket->orderItem?->menuItem?->image_path,
                 'quantity' => $ticket->orderItem?->quantity,
                 'order_item_status' => $ticket->orderItem?->item_status,
                 'note' => $ticket->orderItem?->notes,
@@ -52,11 +59,17 @@ class KitchenTicketController extends Controller
                     ?? $ticket->orderItem?->order?->table?->name
                     ?? null,
             ];
-        });
+        })->values();
     
         return response()->json([
             'success' => true,
-            'data' => $rows,
+            'data' => $data,
+            'meta' => [
+                'current_page' => $rows->currentPage(),
+                'per_page' => $rows->perPage(),
+                'total' => $rows->total(),
+                'last_page' => $rows->lastPage(),
+            ],
         ]);
     }
 
