@@ -24,16 +24,13 @@ class KitchenTicketController extends Controller
             $perPage = 20;
         }
     
-        // Base query for counts (without pagination)
-        $baseQuery = KitchenTicket::query();
-    
-        $statusCounts = [
-            'confirmed' => (clone $baseQuery)->where('status', 'confirmed')->count(),
-            'preparing' => (clone $baseQuery)->where('status', 'preparing')->count(),
-            'ready' => (clone $baseQuery)->where('status', 'ready')->count(),
+        // Status counts (separate from pagination meta)
+        $statusSummary = [
+            'confirmed' => KitchenTicket::where('status', 'confirmed')->count(),
+            'preparing' => KitchenTicket::where('status', 'preparing')->count(),
+            'ready' => KitchenTicket::where('status', 'ready')->count(),
         ];
     
-        // Main data query
         $q = KitchenTicket::query()
             ->with([
                 'orderItem.order.table',
@@ -79,14 +76,8 @@ class KitchenTicketController extends Controller
                 'per_page' => $rows->perPage(),
                 'total' => $rows->total(),
                 'last_page' => $rows->lastPage(),
-    
-                // status summary
-                'status_summary' => [
-                    'confirmed' => $statusCounts['confirmed'],
-                    'preparing' => $statusCounts['preparing'],
-                    'ready' => $statusCounts['ready'],
-                ],
             ],
+            'status_summary' => $statusSummary,
         ]);
     }
 
