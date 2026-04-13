@@ -25,6 +25,8 @@ class BarTicketController extends Controller
             $perPage = 20;
         }
     
+        $search = trim((string) $request->get('search', ''));
+    
         $statusSummary = [
             'confirmed' => BarTicket::where('status', 'confirmed')->count(),
             'preparing' => BarTicket::where('status', 'preparing')->count(),
@@ -49,6 +51,18 @@ class BarTicketController extends Controller
             }
         }
     
+        // 🔎 Live search by order number OR waiter name
+        if ($search !== '') {
+            $q->where(function ($query) use ($search) {
+                $query->whereHas('orderItem.order', function ($orderQuery) use ($search) {
+                    $orderQuery->where('order_number', 'like', "%{$search}%");
+                })
+                ->orWhereHas('orderItem.order.waiter', function ($waiterQuery) use ($search) {
+                    $waiterQuery->where('name', 'like', "%{$search}%");
+                });
+            });
+        }
+    
         $rows = $q->paginate($perPage);
     
         $data = $rows->getCollection()->transform(function ($ticket) {
@@ -65,8 +79,6 @@ class BarTicketController extends Controller
     
                 'order_item_id' => $ticket->orderItem?->id,
                 'item_name' => $menuItem?->name,
-    
-                // same logic as kitchen
                 'image_path' => $menuItem?->image_path,
     
                 'quantity' => $ticket->orderItem?->quantity,
