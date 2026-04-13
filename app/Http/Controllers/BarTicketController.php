@@ -93,7 +93,7 @@ class BarTicketController extends Controller
         ]);
     }
 
-    public function accept(Request $request, $id)
+ public function accept(Request $request, $id)
     {
         return DB::transaction(function () use ($request, $id) {
             $ticket = BarTicket::lockForUpdate()

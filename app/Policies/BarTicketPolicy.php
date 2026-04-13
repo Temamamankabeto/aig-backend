@@ -14,6 +14,6 @@ class BarTicketPolicy
     public function update(User $user, BarTicket $model): bool { return $this->allows($user, 'kds.bar'); }
     public function accept(User $user, BarTicket $model): bool { return $this->allows($user, 'kds.bar'); }
     public function ready(User $user, BarTicket $model): bool { return $this->allows($user, 'kds.bar'); }
-    public function delay(User $user, BarTicket $model): bool { return $this->allows($user, 'kds.bar'); }
+    public function served(User $user, BarTicket $model): bool { return $this->allows($user, 'kds.bar'); }
     public function reject(User $user, BarTicket $model): bool { return $this->allows($user, 'kds.bar'); }
 }
