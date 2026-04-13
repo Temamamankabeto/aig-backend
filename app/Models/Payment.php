@@ -13,11 +13,13 @@ class Payment extends Model
         'bill_id', 'method', 'amount', 'reference','receipt_path',
         'status', 'received_by', 'paid_at',
         'cash_shift_id',
+        'screenshot_path',
     ];
 
     protected $casts = [
         'amount' => 'decimal:2',
         'paid_at' => 'datetime',
+        
     ];
 
     public function bill()

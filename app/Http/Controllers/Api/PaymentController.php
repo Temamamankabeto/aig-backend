@@ -61,6 +61,7 @@ class PaymentController extends Controller
             'reference' => 'nullable|string|max:255',
             'paid_at' => 'nullable|date',
             'cash_shift_id' => 'nullable|exists:cash_shifts,id',
+            'screenshot_path' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:4096',
         ]);
 
         return DB::transaction(function () use ($request, $billId, $data) {
@@ -95,6 +96,7 @@ class PaymentController extends Controller
                 'received_by' => $request->user()->id,
                 'cash_shift_id' => $shiftId,
                 'paid_at' => $data['paid_at'] ?? now(),
+                'screenshot_path' => $request->hasFile('screenshot') ? $request->file('screenshot')->store('payments/screenshots', 'public') : null,
             ]);
 
             $beforeBill = $bill->toArray();
