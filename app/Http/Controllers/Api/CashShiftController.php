@@ -67,8 +67,15 @@ class CashShiftController extends Controller
             ];
         })->values();
     
+        $currentShift = CashShift::where('cashier_id', $request->user()->id)
+            ->latest('id')
+            ->first();
+    
         return response()->json([
             'success' => true,
+            'current_status' => $currentShift?->status ?? 'no_shift',
+               
+            
             'data' => $data,
             'meta' => [
                 'current_page' => $shifts->currentPage(),
@@ -78,7 +85,6 @@ class CashShiftController extends Controller
             ],
         ]);
     }
-
     public function current(Request $request)
     {
         $this->authorize('current', CashShift::class);
