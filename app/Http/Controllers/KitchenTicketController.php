@@ -19,17 +19,17 @@ class KitchenTicketController extends Controller
     public function index(Request $request)
     {
         $perPage = (int) $request->get('per_page', 20);
-
+    
         if ($perPage <= 0) {
             $perPage = 20;
         }
-
+    
         $statusSummary = [
             'confirmed' => KitchenTicket::where('status', 'confirmed')->count(),
             'preparing' => KitchenTicket::where('status', 'preparing')->count(),
             'ready' => KitchenTicket::where('status', 'ready')->count(),
         ];
-
+    
         $q = KitchenTicket::query()
             ->with([
                 'orderItem.order.table',
@@ -38,35 +38,36 @@ class KitchenTicketController extends Controller
                 'chef',
             ])
             ->orderByDesc('id');
-
+    
         if ($request->filled('status')) {
             $q->where('status', $request->status);
         }
-
+    
         $rows = $q->paginate($perPage);
-
+    
         $data = $rows->getCollection()->transform(function ($ticket) {
             return [
                 'kitchen_ticket_id' => $ticket->id,
                 'ticket_status' => $ticket->status,
-
+    
                 'order_id' => $ticket->orderItem?->order?->id,
                 'order_number' => $ticket->orderItem?->order?->order_number,
-
+                'order_type' => $ticket->orderItem?->order?->order_type, // ✅ added here
+    
                 'order_item_id' => $ticket->orderItem?->id,
                 'item_name' => $ticket->orderItem?->menuItem?->name,
                 'image_path' => $ticket->orderItem?->menuItem?->image_path,
                 'quantity' => $ticket->orderItem?->quantity,
                 'order_item_status' => $ticket->orderItem?->item_status,
                 'note' => $ticket->orderItem?->notes,
-
+    
                 'waiter_name' => $ticket->orderItem?->order?->waiter?->name,
                 'table_number' => $ticket->orderItem?->order?->table?->table_number
                     ?? $ticket->orderItem?->order?->table?->name
                     ?? null,
             ];
         })->values();
-
+    
         return response()->json([
             'success' => true,
             'data' => $data,
