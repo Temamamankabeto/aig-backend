@@ -12,25 +12,24 @@ class OrderStatusService
     public static function recalc(int $orderId): void
     {
         $order = Order::with('items')->find($orderId);
-        if (!$order) return;
 
-        if ($order->items->count() === 0) {
-            // no items -> keep pending
+        if (! $order) {
+            return;
+        }
+
+        if ($order->items->isEmpty()) {
             return;
         }
 
         $items = $order->items;
 
-        $allIn = function(array $allowed) use ($items) {
-            return $items->every(fn($i) => in_array($i->item_status, $allowed, true));
-        };
+        // Ignore cancelled/rejected when calculating active workflow
+        $activeItems = $items->filter(function ($item) {
+            return ! in_array($item->item_status, ['cancelled', 'rejected'], true);
+        });
 
-        $anyIn = function(array $statuses) use ($items) {
-            return $items->contains(fn($i) => in_array($i->item_status, $statuses, true));
-        };
-
-        // 1) all cancelled/rejected
-        if ($allIn(['cancelled', 'rejected'])) {
+        // If all items are cancelled/rejected
+        if ($activeItems->isEmpty()) {
             if ($order->status !== 'cancelled') {
                 $order->status = 'cancelled';
                 $order->save();
@@ -38,18 +37,26 @@ class OrderStatusService
             return;
         }
 
-        // 2) all served (served or cancelled/rejected can be treated as done if you want)
-        // strict served:
-        if ($allIn(['served'])) {
+        $allActiveIn = function (array $allowed) use ($activeItems) {
+            return $activeItems->every(fn ($item) => in_array($item->item_status, $allowed, true));
+        };
+
+        $anyActiveIn = function (array $statuses) use ($activeItems) {
+            return $activeItems->contains(fn ($item) => in_array($item->item_status, $statuses, true));
+        };
+
+        // 1) all active items served
+        if ($allActiveIn(['served'])) {
             if ($order->status !== 'served') {
                 $order->status = 'served';
+                $order->served_at = $order->served_at ?? now();
                 $order->save();
             }
             return;
         }
 
-        // 3) all ready/served (order ready)
-        if ($allIn(['ready', 'served'])) {
+        // 2) all active items ready or served
+        if ($allActiveIn(['ready', 'served'])) {
             if ($order->status !== 'ready') {
                 $order->status = 'ready';
                 $order->save();
@@ -57,8 +64,8 @@ class OrderStatusService
             return;
         }
 
-        // 4) any preparing/delayed => in_progress
-        if ($anyIn(['preparing', 'delayed'])) {
+        // 3) any active item preparing
+        if ($anyActiveIn(['preparing'])) {
             if ($order->status !== 'in_progress') {
                 $order->status = 'in_progress';
                 $order->save();
@@ -66,16 +73,20 @@ class OrderStatusService
             return;
         }
 
-        // 5) otherwise: keep confirmed if already confirmed, else pending
-        // (example: all pending)
-        if ($order->status === 'confirmed') return;
-
-        if ($anyIn(['pending'])) {
-            // stay pending unless confirmed manually
-            if ($order->status !== 'pending') {
-                $order->status = 'pending';
+        // 4) all active items confirmed
+        if ($allActiveIn(['confirmed'])) {
+            if ($order->status !== 'confirmed') {
+                $order->status = 'confirmed';
+                $order->confirmed_at = $order->confirmed_at ?? now();
                 $order->save();
             }
+            return;
+        }
+
+        // 5) fallback pending
+        if ($order->status !== 'pending') {
+            $order->status = 'pending';
+            $order->save();
         }
     }
 }

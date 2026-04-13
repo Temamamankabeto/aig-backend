@@ -45,6 +45,20 @@ class BarTicketController extends Controller
             $q->where('status', $request->status);
         }
     
+        $statusQuery = BarTicket::query();
+    
+        if ($scope === 'today') {
+            $statusQuery->whereDate('created_at', today());
+        } elseif ($scope === 'all_open') {
+            $statusQuery->whereIn('status', ['confirmed', 'preparing', 'ready']);
+        }
+    
+        $statusSummary = [
+            'confirmed' => (clone $statusQuery)->where('status', 'confirmed')->count(),
+            'preparing' => (clone $statusQuery)->where('status', 'preparing')->count(),
+            'ready' => (clone $statusQuery)->where('status', 'ready')->count(),
+        ];
+    
         $rows = $q->paginate($perPage);
     
         $data = $rows->getCollection()->transform(function ($ticket) {
@@ -78,6 +92,7 @@ class BarTicketController extends Controller
                 'total' => $rows->total(),
                 'last_page' => $rows->lastPage(),
             ],
+            'status_summary' => $statusSummary,
         ]);
     }
 
@@ -154,65 +169,7 @@ class BarTicketController extends Controller
         });
     }
 
-    public function delay(Request $request, $id)
-    {
-        $ticket = BarTicket::findOrFail($id);
-        $this->authorize('delay', $ticket);
-        $data = $request->validate([
-            'delay_reason' => 'required|string|max:255',
-        ]);
-
-        return DB::transaction(function () use ($request, $id, $data) {
-            $ticket = BarTicket::lockForUpdate()->with('orderItem.order')->findOrFail($id);
-
-            $ticket->update([
-                'status' => 'delayed',
-                'delay_reason' => $data['delay_reason'],
-            ]);
-
-            $ticket->orderItem->update(['item_status' => 'delayed']);
-            $order = $ticket->orderItem->order;
-            $this->notificationService->notifyUser(
-                $order->waiter_id,
-                'Bar delay',
-                "Bar reported a delay for order {$order->order_number}.",
-                ['kind' => 'bar_delayed', 'order_id' => $order->id, 'ticket_id' => $ticket->id, 'reason' => $data['delay_reason']]
-            );
-            $this->auditLogger->log($request, $request->user()?->id, 'BarTicket', $ticket->id, 'bar_ticket_delayed', null, $ticket->toArray(), 'Bar ticket delayed.');
-
-            return response()->json(['success' => true, 'data' => $ticket]);
-        });
-    }
-
-    public function reject(Request $request, $id)
-    {
-        $ticket = BarTicket::findOrFail($id);
-        $this->authorize('reject', $ticket);
-        $data = $request->validate([
-            'rejection_reason' => 'required|string|max:255',
-        ]);
-
-        return DB::transaction(function () use ($request, $id, $data) {
-            $ticket = BarTicket::lockForUpdate()->with('orderItem.order')->findOrFail($id);
-
-            $ticket->update([
-                'status' => 'rejected',
-                'rejection_reason' => $data['rejection_reason'],
-            ]);
-
-            $ticket->orderItem->update(['item_status' => 'rejected']);
-            $order = $ticket->orderItem->order;
-            $this->notificationService->notifyUser(
-                $order->waiter_id,
-                'Bar rejected item',
-                "Bar rejected an item for order {$order->order_number}.",
-                ['kind' => 'bar_rejected', 'order_id' => $order->id, 'ticket_id' => $ticket->id, 'reason' => $data['rejection_reason']]
-            );
-            $this->auditLogger->log($request, $request->user()?->id, 'BarTicket', $ticket->id, 'bar_ticket_rejected', null, $ticket->toArray(), 'Bar ticket rejected.');
-
-            return response()->json(['success' => true, 'data' => $ticket]);
-        });
-    }
+   
 
 
     public function served(Request $request, $id)

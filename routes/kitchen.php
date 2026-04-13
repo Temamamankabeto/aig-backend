@@ -11,6 +11,5 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/kitchen/tickets', [KitchenTicketController::class, 'index']);
     Route::post('/kitchen/tickets/{id}/accept', [KitchenTicketController::class, 'accept']);
     Route::post('/kitchen/tickets/{id}/ready', [KitchenTicketController::class, 'ready']);
-    Route::post('/kitchen/tickets/{id}/delay', [KitchenTicketController::class, 'delay']);
-    Route::post('/kitchen/tickets/{id}/reject', [KitchenTicketController::class, 'reject']);
+    Route::post('/kitchen/tickets/{id}/served', [KitchenTicketController::class, 'served']);
 });
