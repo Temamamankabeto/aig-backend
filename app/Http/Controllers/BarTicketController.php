@@ -38,13 +38,13 @@ class BarTicketController extends Controller
                 'orderItem.order.waiter',
                 'orderItem.menuItem',
             ])
-            ->whereNotIn('status', ['served', 'pending']) // exclude both
+            ->whereNotIn('status', ['pending', 'served'])
             ->orderByDesc('id');
     
         if ($request->filled('status')) {
             $status = $request->status;
     
-            if (!in_array($status, ['served', 'pending'], true)) {
+            if (!in_array($status, ['pending', 'served'], true)) {
                 $q->where('status', $status);
             }
         }
@@ -52,6 +52,9 @@ class BarTicketController extends Controller
         $rows = $q->paginate($perPage);
     
         $data = $rows->getCollection()->transform(function ($ticket) {
+    
+            $menuItem = $ticket->orderItem?->menuItem;
+    
             return [
                 'bar_ticket_id' => $ticket->id,
                 'ticket_status' => $ticket->status,
@@ -61,8 +64,11 @@ class BarTicketController extends Controller
                 'order_type' => $ticket->orderItem?->order?->order_type,
     
                 'order_item_id' => $ticket->orderItem?->id,
-                'item_name' => $ticket->orderItem?->menuItem?->name,
-                'image_path' => $ticket->orderItem?->menuItem?->image_path,
+                'item_name' => $menuItem?->name,
+    
+                // same logic as kitchen
+                'image_path' => $menuItem?->image_path,
+    
                 'quantity' => $ticket->orderItem?->quantity,
                 'order_item_status' => $ticket->orderItem?->item_status,
                 'note' => $ticket->orderItem?->notes,
