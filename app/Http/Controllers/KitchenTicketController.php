@@ -29,6 +29,7 @@ class KitchenTicketController extends Controller
             'confirmed' => KitchenTicket::where('status', 'confirmed')->count(),
             'preparing' => KitchenTicket::where('status', 'preparing')->count(),
             'ready' => KitchenTicket::where('status', 'ready')->count(),
+            'served' => KitchenTicket::where('status', 'served')->count(),
         ];
     
         $q = KitchenTicket::query()
