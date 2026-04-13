@@ -96,7 +96,7 @@ class PaymentController extends Controller
                 'received_by' => $request->user()->id,
                 'cash_shift_id' => $shiftId,
                 'paid_at' => $data['paid_at'] ?? now(),
-                'screenshot_path' => $request->hasFile('screenshot') ? $request->file('screenshot')->store('payments/screenshots', 'public') : null,
+                'screenshot_path' => $request->hasFile('screenshot_path') ? $request->file('screenshot_path')->store('payments/screenshots', 'public') : null,
             ]);
 
             $beforeBill = $bill->toArray();
