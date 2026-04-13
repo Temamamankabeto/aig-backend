@@ -19,10 +19,64 @@ class CashShiftController extends Controller
     public function index(Request $request)
     {
         $this->authorize('viewAny', CashShift::class);
-        $q = CashShift::query()->with('cashier')->latest('id');
-        if ($request->filled('status')) $q->where('status', $request->string('status'));
-        if ($request->filled('cashier_id')) $q->where('cashier_id', $request->integer('cashier_id'));
-        return response()->json(['success' => true, 'data' => $q->paginate((int)($request->get('per_page', 20)))]);
+    
+        $query = CashShift::with('cashier')->latest('id');
+    
+        if (
+            $request->filled('status') &&
+            in_array($request->status, ['open', 'closed'], true)
+        ) {
+            $query->where('status', $request->status);
+        }
+    
+        if ($request->filled('cashier_id')) {
+            $query->where('cashier_id', (int) $request->cashier_id);
+        }
+    
+        if ($request->filled('date_from')) {
+            $query->whereDate('opened_at', '>=', $request->date_from);
+        }
+    
+        if ($request->filled('date_to')) {
+            $query->whereDate('opened_at', '<=', $request->date_to);
+        }
+    
+        $perPage = max(1, min((int) $request->query('per_page', 10), 100));
+        $shifts = $query->paginate($perPage);
+    
+        $data = collect($shifts->items())->map(function ($shift) {
+            $summary = $this->cashShiftService->summary($shift);
+    
+            $closingCash = (float) ($shift->closing_cash ?? 0);
+            $expectedCash = (float) ($summary['expected_cash'] ?? 0);
+    
+            return [
+                'id' => $shift->id,
+                'status' => $shift->status,
+                'cashier_name' => $shift->cashier?->name,
+                'opened_at' => $shift->opened_at,
+                'closed_at' => $shift->closed_at,
+                'opening_cash' => round((float) $shift->opening_cash, 2),
+                'closing_cash' => $shift->closing_cash !== null
+                    ? round((float) $shift->closing_cash, 2)
+                    : null,
+                'expected_cash' => round($expectedCash, 2),
+                'variance' => $shift->closing_cash !== null
+                    ? round($closingCash - $expectedCash, 2)
+                    : null,
+            ];
+        })->values();
+    
+        return response()->json([
+            'success' => true,
+            'data' => $data,
+            'meta' => [
+                'current_page' => $shifts->currentPage(),
+                'last_page' => $shifts->lastPage(),
+                'per_page' => $shifts->perPage(),
+                'total' => $shifts->total(),
+            ],
+        ]);
     }
 
     public function current(Request $request)
