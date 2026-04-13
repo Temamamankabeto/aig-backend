@@ -13,43 +13,45 @@ class BillController extends Controller
 {
     public function __construct(private BillService $billService)
     {
-        public function index(Request $request)
-        {
-            $this->authorize('viewAny', Bill::class);
-        
-            $q = Bill::query()->with(['order.table', 'order.waiter', 'payments']);
-        
-            if ($request->filled('status')) {
-                $q->where('status', $request->string('status'));
-            }
-        
-            if ($request->filled('order_id')) {
-                $q->where('order_id', $request->integer('order_id'));
-            }
-        
-            if ($request->filled('search')) {
-                $search = trim((string) $request->string('search'));
-        
-                $q->whereHas('order', function ($sub) use ($search) {
-                    $sub->where('order_number', 'like', "%{$search}%")
-                        ->orWhere('customer_name', 'like', "%{$search}%")
-                        ->orWhere('customer_phone', 'like', "%{$search}%");
-                });
-            }
-        
-            $bills = $q->latest('id')->paginate((int) $request->get('per_page', 20));
-        
-            return response()->json([
-                'success' => true,
-                'data' => $bills->items(),
-                'meta' => [
-                    'current_page' => $bills->currentPage(),
-                    'last_page' => $bills->lastPage(),
-                    'per_page' => $bills->perPage(),
-                    'total' => $bills->total(),
-                ],
-            ]);
+    }
+
+    public function index(Request $request)
+    {
+        $this->authorize('viewAny', Bill::class);
+    
+        $q = Bill::query()->with(['order.table', 'order.waiter', 'payments']);
+    
+        if ($request->filled('status')) {
+            $q->where('status', $request->string('status'));
         }
+    
+        if ($request->filled('order_id')) {
+            $q->where('order_id', $request->integer('order_id'));
+        }
+    
+        if ($request->filled('search')) {
+            $search = trim((string) $request->string('search'));
+    
+            $q->whereHas('order', function ($sub) use ($search) {
+                $sub->where('order_number', 'like', "%{$search}%")
+                    ->orWhere('customer_name', 'like', "%{$search}%")
+                    ->orWhere('customer_phone', 'like', "%{$search}%");
+            });
+        }
+    
+        $bills = $q->latest('id')->paginate((int) $request->get('per_page', 20));
+    
+        return response()->json([
+            'success' => true,
+            'data' => $bills->items(),
+            'meta' => [
+                'current_page' => $bills->currentPage(),
+                'last_page' => $bills->lastPage(),
+                'per_page' => $bills->perPage(),
+                'total' => $bills->total(),
+            ],
+        ]);
+    }
 
     public function show($id)
     {
