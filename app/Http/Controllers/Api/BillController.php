@@ -16,23 +16,52 @@ class BillController extends Controller
     }
 
     public function index(Request $request)
-    {
-        $this->authorize('viewAny', Bill::class);
+{
+    $this->authorize('viewAny', Bill::class);
 
-        $q = Bill::query()->with(['order.table', 'order.waiter', 'payments']);
-        if ($request->filled('status')) $q->where('status', $request->string('status'));
-        if ($request->filled('order_id')) $q->where('order_id', $request->integer('order_id'));
-        if ($request->filled('search')) {
-            $search = trim((string) $request->string('search'));
-            $q->whereHas('order', function ($sub) use ($search) {
-                $sub->where('order_number', 'like', "%{$search}%")
-                    ->orWhere('customer_name', 'like', "%{$search}%")
-                    ->orWhere('customer_phone', 'like', "%{$search}%");
-            });
-        }
+    $query = Bill::with([
+        'order.table',
+        'order.waiter',
+        'payments',
+    ])->latest('id');
 
-        return response()->json(['success' => true, 'data' => $q->latest('id')->paginate((int) $request->get('per_page', 20))]);
+    // Search filter
+    if ($request->filled('search')) {
+        $search = trim((string) $request->search);
+
+        $query->whereHas('order', function ($q) use ($search) {
+            $q->where('order_number', 'like', "%{$search}%")
+                ->orWhere('customer_name', 'like', "%{$search}%")
+                ->orWhere('customer_phone', 'like', "%{$search}%");
+        });
     }
+
+    // Status filter
+    if ($request->filled('status')) {
+        $query->where('status', $request->string('status'));
+    }
+
+    // Order filter
+    if ($request->filled('order_id')) {
+        $query->where('order_id', $request->integer('order_id'));
+    }
+
+    // Pagination control
+    $perPage = max(1, min((int) $request->query('per_page', 10), 100));
+
+    $bills = $query->paginate($perPage);
+
+    return response()->json([
+        'success' => true,
+        'data' => $bills->items(),
+        'meta' => [
+            'current_page' => $bills->currentPage(),
+            'last_page' => $bills->lastPage(),
+            'per_page' => $bills->perPage(),
+            'total' => $bills->total(),
+        ],
+    ]);
+}
 
     public function show($id)
     {
