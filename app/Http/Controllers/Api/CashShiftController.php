@@ -73,9 +73,12 @@ class CashShiftController extends Controller
     
         return response()->json([
             'success' => true,
-            'current_status' => $currentShift?->status ?? 'no_shift',
-               
-            
+            'current_status' => [
+                'status' => $currentShift?->status ?? 'no_shift',
+                'shift_id' => $currentShift?->id,
+                'opened_at' => $currentShift?->opened_at,
+                'closed_at' => $currentShift?->closed_at,
+            ],
             'data' => $data,
             'meta' => [
                 'current_page' => $shifts->currentPage(),
