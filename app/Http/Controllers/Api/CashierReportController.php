@@ -8,11 +8,18 @@ use App\Models\CashShift;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Models\RefundRequest;
+use App\Services\CashShiftService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class CashierReportController extends Controller
 {
+    public function __construct(
+        private CashShiftService $cashShiftService
+    ) {
+    }
+
     protected function applyDateRange($query, Request $request, string $column = 'created_at')
     {
         if ($request->filled('date_from')) {
@@ -66,7 +73,11 @@ class CashierReportController extends Controller
     public function paymentMethodSummary(Request $request)
     {
         $query = Payment::query()
-            ->select('method', DB::raw('COUNT(*) as total_transactions'), DB::raw('COALESCE(SUM(amount),0) as total_amount'))
+            ->select(
+                'method',
+                DB::raw('COUNT(*) as total_transactions'),
+                DB::raw('COALESCE(SUM(amount),0) as total_amount')
+            )
             ->groupBy('method')
             ->orderByDesc('total_amount');
 
@@ -154,8 +165,7 @@ class CashierReportController extends Controller
 
         $totalCount = (clone $query)->count();
 
-        $totalAmount = method_exists(new RefundRequest(), 'getAttribute') &&
-            \Schema::hasColumn('refund_requests', 'amount')
+        $totalAmount = Schema::hasColumn('refund_requests', 'amount')
             ? (float) (clone $query)->sum('amount')
             : null;
 
@@ -249,7 +259,7 @@ class CashierReportController extends Controller
     public function xReport(Request $request)
     {
         $this->authorize('current', CashShift::class);
-    
+
         $shift = CashShift::query()
             ->with('cashier')
             ->when(
@@ -260,14 +270,14 @@ class CashierReportController extends Controller
                     ->latest('id')
             )
             ->first();
-    
+
         if (! $shift) {
             return response()->json([
                 'success' => false,
                 'message' => 'No open shift found.',
             ], 404);
         }
-    
+
         return response()->json([
             'success' => true,
             'data' => $this->cashShiftService->withSummary($shift),
@@ -276,48 +286,33 @@ class CashierReportController extends Controller
 
     public function zReport(Request $request)
     {
+        $request->validate([
+            'shift_id' => ['required', 'integer', 'exists:cash_shifts,id'],
+        ]);
+
         $shift = CashShift::query()
             ->with('cashier')
             ->findOrFail($request->shift_id);
 
-        $endTime = $shift->closed_at ?: now();
+        $summary = $this->cashShiftService->summary($shift);
 
-        $payments = Payment::query()
-            ->whereBetween('created_at', [$shift->opened_at, $endTime])
-            ->when($shift->cashier_id, fn ($q) => $q->where('received_by', $shift->cashier_id))
-            ->where('status', 'paid');
+        $closingCash = (float) ($shift->closing_cash ?? 0);
+        $expectedCash = (float) ($summary['expected_cash'] ?? 0);
+        $variance = round($closingCash - $expectedCash, 2);
 
-        $paymentByMethod = (clone $payments)
-            ->select('method', DB::raw('COUNT(*) as total_transactions'), DB::raw('COALESCE(SUM(amount),0) as total_amount'))
-            ->groupBy('method')
-            ->get();
-
-        $cashTotal = (clone $payments)
-            ->where('method', 'cash')
-            ->sum('amount');
-
-        $expectedCash = (float) $shift->opening_amount + (float) $cashTotal;
-        $closingAmount = (float) ($shift->closing_amount ?? 0);
-        $variance = $closingAmount - $expectedCash;
+        $data = array_merge(
+            $shift->toArray(),
+            [
+                'cashier' => $shift->cashier,
+                'summary' => array_merge($summary, [
+                    'variance' => $variance,
+                ]),
+            ]
+        );
 
         return response()->json([
             'success' => true,
-            'data' => [
-                'report_type' => 'Z',
-                'shift_id' => $shift->id,
-                'cashier' => $shift->cashier?->name,
-                'opened_at' => $shift->opened_at,
-                'closed_at' => $shift->closed_at,
-                'status' => $shift->status,
-                'opening_amount' => (float) $shift->opening_amount,
-                'closing_amount' => $closingAmount,
-                'cash_sales' => (float) $cashTotal,
-                'expected_cash' => (float) $expectedCash,
-                'variance' => (float) $variance,
-                'total_sales' => (float) (clone $payments)->sum('amount'),
-                'total_transactions' => (int) (clone $payments)->count(),
-                'by_method' => $paymentByMethod,
-            ],
+            'data' => $data,
         ]);
     }
 }
