@@ -248,53 +248,32 @@ class CashierReportController extends Controller
 
     public function xReport(Request $request)
     {
+        $this->authorize('current', CashShift::class);
+    
         $shift = CashShift::query()
             ->with('cashier')
             ->when(
                 $request->filled('shift_id'),
                 fn ($q) => $q->where('id', $request->shift_id),
-                fn ($q) => $q->where('cashier_id', $request->user()->id)->where('status', 'open')->latest('id')
+                fn ($q) => $q->where('cashier_id', $request->user()->id)
+                    ->where('status', 'open')
+                    ->latest('id')
             )
             ->first();
-
+    
         if (! $shift) {
             return response()->json([
                 'success' => false,
                 'message' => 'No open shift found.',
             ], 404);
         }
-
-        $payments = Payment::query()
-            ->whereBetween('created_at', [$shift->opened_at, now()])
-            ->when($shift->cashier_id, fn ($q) => $q->where('received_by', $shift->cashier_id))
-            ->where('status', 'paid');
-
-        $paymentByMethod = (clone $payments)
-            ->select('method', DB::raw('COUNT(*) as total_transactions'), DB::raw('COALESCE(SUM(amount),0) as total_amount'))
-            ->groupBy('method')
-            ->get();
-
-        $cashTotal = (clone $payments)
-            ->where('method', 'cash')
-            ->sum('amount');
-
-        $expectedCash = (float) $shift->opening_amount + (float) $cashTotal;
-
+    
+        $data = $this->cashShiftService->withSummary($shift);
+        $data['report_type'] = 'X';
+    
         return response()->json([
             'success' => true,
-            'data' => [
-                'report_type' => 'X',
-                'shift_id' => $shift->id,
-                'cashier' => $shift->cashier?->name,
-                'opened_at' => $shift->opened_at,
-                'status' => $shift->status,
-                'opening_amount' => (float) $shift->opening_amount,
-                'cash_sales' => (float) $cashTotal,
-                'expected_cash' => (float) $expectedCash,
-                'total_sales' => (float) (clone $payments)->sum('amount'),
-                'total_transactions' => (int) (clone $payments)->count(),
-                'by_method' => $paymentByMethod,
-            ],
+            'data' => $data,
         ]);
     }
 
