@@ -99,7 +99,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/cashier/reports/voided-bills', [CashierReportController::class, 'voidedBills']);
     Route::get('/cashier/reports/pending-payments', [CashierReportController::class, 'pendingPayments']);
     Route::get('/cashier/reports/x-report', [CashierReportController::class, 'xReport']);
-    Route::post('/cashier/reports/z-report', [CashierReportController::class, 'zReport']);
+    Route::get('/cashier/reports/z-report', [CashierReportController::class, 'zReport']);
 
     /*
     |--------------------------------------------------------------------------
