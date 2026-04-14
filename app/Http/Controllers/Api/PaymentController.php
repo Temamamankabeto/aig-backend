@@ -79,6 +79,7 @@ class PaymentController extends Controller
     public function store(Request $request, $billId)
     {
         $this->authorize('create', Payment::class);
+    
         $data = $request->validate([
             'method' => 'required|in:cash,card,mobile,transfer',
             'amount' => 'required|numeric|min:0.01',
@@ -87,30 +88,53 @@ class PaymentController extends Controller
             'cash_shift_id' => 'nullable|exists:cash_shifts,id',
             'screenshot_path' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:4096',
         ]);
-
+    
         return DB::transaction(function () use ($request, $billId, $data) {
-            $bill = Bill::lockForUpdate()->with('order.table')->findOrFail($billId);
+            $bill = Bill::lockForUpdate()
+                ->with('order.table')
+                ->findOrFail($billId);
+    
             if ($bill->status === 'void') {
-                return response()->json(['success' => false, 'message' => 'Bill is void'], 422);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Bill is void',
+                ], 422);
             }
-
+    
             $shiftId = $data['cash_shift_id'] ?? null;
-            if ($data['method'] === 'cash') {
-                $shift = $shiftId
-                    ? CashShift::lockForUpdate()->findOrFail($shiftId)
-                    : CashShift::where('cashier_id', $request->user()->id)->where('status', 'open')->lockForUpdate()->first();
-
-                if (!$shift || $shift->status !== 'open') {
-                    return response()->json(['success' => false, 'message' => 'An open cash shift is required for cash payments'], 422);
-                }
-                $shiftId = $shift->id;
+    
+            $shift = $shiftId
+                ? CashShift::lockForUpdate()->findOrFail($shiftId)
+                : CashShift::where('cashier_id', $request->user()->id)
+                    ->where('status', 'open')
+                    ->lockForUpdate()
+                    ->first();
+    
+            if (! $shift || $shift->status !== 'open') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'An open cash shift is required for all payments',
+                ], 422);
             }
-
+    
+            if ((int) $shift->cashier_id !== (int) $request->user()->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You can only record payments on your own open shift',
+                ], 422);
+            }
+    
+            $shiftId = $shift->id;
+    
             $amount = round((float) $data['amount'], 2);
+    
             if ($amount > round((float) $bill->balance, 2)) {
-                return response()->json(['success' => false, 'message' => 'Payment exceeds remaining balance'], 422);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Payment exceeds remaining balance',
+                ], 422);
             }
-
+    
             $payment = Payment::create([
                 'bill_id' => $bill->id,
                 'method' => $data['method'],
@@ -120,24 +144,58 @@ class PaymentController extends Controller
                 'received_by' => $request->user()->id,
                 'cash_shift_id' => $shiftId,
                 'paid_at' => $data['paid_at'] ?? now(),
-                'screenshot_path' => $request->hasFile('screenshot_path') ? $request->file('screenshot_path')->store('payments/screenshots', 'public') : null,
+                'screenshot_path' => $request->hasFile('screenshot_path')
+                    ? $request->file('screenshot_path')->store('payments/screenshots', 'public')
+                    : null,
             ]);
-
+    
             $beforeBill = $bill->toArray();
+    
             $bill->paid_amount = round((float) $bill->paid_amount + $amount, 2);
             $bill->balance = max(0, round((float) $bill->total - (float) $bill->paid_amount, 2));
+    
             if ($bill->issued_at === null) {
                 $bill->issued_by = $request->user()->id;
                 $bill->issued_at = now();
             }
+    
             $bill->status = (float) $bill->balance <= 0 ? 'paid' : 'partial';
-            if ($bill->status === 'paid') $bill->paid_at = now();
+    
+            if ($bill->status === 'paid') {
+                $bill->paid_at = now();
+            }
+    
             $bill->save();
-
-            $this->orderSettlementService->settlePaidBill($bill->fresh('order.table', 'payments'), $request, (int) $request->user()->id, 'direct_payment');
-            $this->auditLogger->log($request, $request->user()->id, 'Payment', $payment->id, 'payment_recorded', null, $payment->fresh()->toArray(), 'Payment recorded.');
-            $this->auditLogger->log($request, $request->user()->id, 'Bill', $bill->id, 'bill_payment_applied', $beforeBill, $bill->fresh()->toArray(), 'Payment applied to bill.');
-
+    
+            $this->orderSettlementService->settlePaidBill(
+                $bill->fresh('order.table', 'payments'),
+                $request,
+                (int) $request->user()->id,
+                'direct_payment'
+            );
+    
+            $this->auditLogger->log(
+                $request,
+                $request->user()->id,
+                'Payment',
+                $payment->id,
+                'payment_recorded',
+                null,
+                $payment->fresh()->toArray(),
+                'Payment recorded.'
+            );
+    
+            $this->auditLogger->log(
+                $request,
+                $request->user()->id,
+                'Bill',
+                $bill->id,
+                'bill_payment_applied',
+                $beforeBill,
+                $bill->fresh()->toArray(),
+                'Payment applied to bill.'
+            );
+    
             return response()->json([
                 'success' => true,
                 'data' => [
