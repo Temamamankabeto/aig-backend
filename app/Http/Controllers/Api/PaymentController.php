@@ -25,14 +25,26 @@ class PaymentController extends Controller
     public function index(Request $request)
     {
         $this->authorize('viewAny', Payment::class);
-        $q = Payment::query()->with(['bill.order', 'receiver', 'refundRequest'])->orderByDesc('id');
-
-        if ($request->filled('bill_id')) $q->where('bill_id', $request->integer('bill_id'));
-        if ($request->filled('status')) $q->where('status', (string) $request->string('status'));
-        if ($request->filled('method')) $q->where('method', (string) $request->string('method'));
-
+    
+        $q = Payment::query()
+            ->with(['bill.order', 'receiver', 'refundRequest'])
+            ->orderByDesc('id');
+    
+        if ($request->filled('bill_id')) {
+            $q->where('bill_id', $request->integer('bill_id'));
+        }
+    
+        if ($request->filled('status')) {
+            $q->where('status', (string) $request->string('status'));
+        }
+    
+        if ($request->filled('method')) {
+            $q->where('method', (string) $request->string('method'));
+        }
+    
         if ($request->filled('search')) {
             $search = trim((string) $request->string('search'));
+    
             $q->where(function ($sub) use ($search) {
                 $sub->where('reference', 'like', "%{$search}%")
                     ->orWhereHas('bill.order', function ($orderQ) use ($search) {
@@ -41,8 +53,20 @@ class PaymentController extends Controller
                     });
             });
         }
-
-        return response()->json(['success' => true, 'data' => $q->paginate((int) $request->get('per_page', 20))]);
+    
+        $perPage = max(1, min((int) $request->query('per_page', 10), 100));
+        $payments = $q->paginate($perPage);
+    
+        return response()->json([
+            'success' => true,
+            'data' => $payments->items(),
+            'meta' => [
+                'current_page' => $payments->currentPage(),
+                'last_page' => $payments->lastPage(),
+                'per_page' => $payments->perPage(),
+                'total' => $payments->total(),
+            ],
+        ]);
     }
 
     public function show($id)
