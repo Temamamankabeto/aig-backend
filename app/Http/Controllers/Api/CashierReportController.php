@@ -268,12 +268,9 @@ class CashierReportController extends Controller
             ], 404);
         }
     
-        $data = $this->cashShiftService->withSummary($shift);
-        $data['report_type'] = 'X';
-    
         return response()->json([
             'success' => true,
-            'data' => $data,
+            'data' => $this->cashShiftService->withSummary($shift),
         ]);
     }
 
