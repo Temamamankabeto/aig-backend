@@ -72,12 +72,13 @@ class UserController extends Controller
     public function rolesLite()
     {
         $this->authorize('rolesLite', User::class);
-
+    
         $roles = Role::query()
+            ->where('guard_name', $this->roleGuard)
             ->select('id', 'name')
             ->orderBy('name')
             ->get();
-
+    
         return response()->json([
             'success' => true,
             'message' => 'Roles retrieved successfully',
@@ -97,7 +98,7 @@ class UserController extends Controller
         ]);
     
         $role = Role::where('name', $validated['role'])
-            ->where('guard_name', 'api') // change to 'web' if your app uses web guard
+            ->where('guard_name', $this->roleGuard)
             ->first();
     
         if (! $role) {
@@ -136,7 +137,7 @@ class UserController extends Controller
         ]);
     
         $role = Role::where('name', $validated['role'])
-            ->where('guard_name', 'api') // change to 'web' if your app uses web guard
+            ->where('guard_name', $this->roleGuard)
             ->first();
     
         if (! $role) {
@@ -165,14 +166,25 @@ class UserController extends Controller
     {
         $user = User::findOrFail($id);
         $this->authorize('assignRole', $user);
-
+    
         $validated = $request->validate([
-            'role' => 'required|string',
+            'role' => 'required|string|exists:roles,name',
         ]);
-
-        $user->syncRoles([$validated['role']]);
+    
+        $role = Role::where('name', $validated['role'])
+            ->where('guard_name', $this->roleGuard)
+            ->first();
+    
+        if (! $role) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Selected role does not exist for the correct guard.',
+            ], 422);
+        }
+    
+        $user->syncRoles([$role->name]);
         $user->load('roles');
-
+    
         return response()->json([
             'success' => true,
             'message' => 'Role updated successfully',
