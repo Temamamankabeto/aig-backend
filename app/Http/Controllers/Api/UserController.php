@@ -93,6 +93,7 @@ class UserController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:100',
             'email' => 'required|email|unique:users,email',
+            'phone' => 'required|string|max:20|unique:users,phone',
             'password' => 'required|string|min:6',
             'role' => 'required|string|exists:roles,name',
         ]);
@@ -104,6 +105,7 @@ class UserController extends Controller
         $user = User::create([
             'name' => $validated['name'],
             'email' => $validated['email'],
+            'phone' => $validated['phone'],
             'password' => Hash::make($validated['password']),
             'is_active' => true,
         ]);
