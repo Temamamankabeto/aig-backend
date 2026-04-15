@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\User;
+use App\Http\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Spatie\Permission\Models\Role;
@@ -85,10 +85,7 @@ class UserController extends Controller
         ]);
     }
 
-    use App\Models\User;
-    use Illuminate\Http\Request;
-    use Illuminate\Support\Facades\Hash;
-    use Spatie\Permission\Models\Role;
+    
     
     public function store(Request $request)
     {
