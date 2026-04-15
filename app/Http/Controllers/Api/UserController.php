@@ -235,5 +235,65 @@ class UserController extends Controller
     }
    
 
+    public function updateProfile(Request $request)
+{
+    $user = $request->user();
+
+    $validated = $request->validate([
+        'name' => 'required|string|max:100',
+        'email' => 'required|email|unique:users,email,' . $user->id,
+        'phone' => 'required|string|max:20|unique:users,phone,' . $user->id,
+        'old_password' => 'nullable|string',
+        'new_password' => 'nullable|string|min:6',
+        'profile' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
+    ]);
+
+    $user->name = $validated['name'];
+    $user->email = $validated['email'];
+    $user->phone = $validated['phone'];
+
+    if (!empty($validated['new_password'])) {
+        if (empty($validated['old_password'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Old password is required to change password',
+                'errors' => [
+                    'old_password' => ['Old password is required when setting a new password.']
+                ]
+            ], 422);
+        }
+
+        if (!Hash::check($validated['old_password'], $user->password)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Old password is incorrect',
+                'errors' => [
+                    'old_password' => ['The provided old password is incorrect.']
+                ]
+            ], 422);
+        }
+
+        $user->password = Hash::make($validated['new_password']);
+    }
+
+    if ($request->hasFile('profile')) {
+        if ($user->profile_image && \Storage::disk('public')->exists($user->profile_image)) {
+            \Storage::disk('public')->delete($user->profile_image);
+        }
+
+        $path = $request->file('profile')->store('users/profile-images', 'public');
+        $user->profile_image = $path;
+    }
+
+    $user->save();
+    $user->load('roles');
+
+    return response()->json([
+        'success' => true,
+        'message' => 'Profile updated successfully',
+        'data' => $user,
+    ]);
+}
+
     
 }
