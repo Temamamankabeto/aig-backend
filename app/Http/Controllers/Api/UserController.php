@@ -72,12 +72,13 @@ class UserController extends Controller
     public function rolesLite()
     {
         $this->authorize('rolesLite', User::class);
-
+    
         $roles = Role::query()
+            ->where('guard_name', 'sanctum')
             ->select('id', 'name')
             ->orderBy('name')
             ->get();
-
+    
         return response()->json([
             'success' => true,
             'message' => 'Roles retrieved successfully',
@@ -108,11 +109,12 @@ class UserController extends Controller
         ]);
     
         $user->syncRoles([$role->name]);
+        $user->load('roles');
     
         return response()->json([
             'success' => true,
             'message' => 'User created successfully',
-            'data' => $user->load('roles'),
+            'data' => $user,
         ], 201);
     }
 
@@ -120,19 +122,25 @@ class UserController extends Controller
     {
         $user = User::findOrFail($id);
         $this->authorize('update', $user);
-
+    
         $validated = $request->validate([
             'name' => 'required|string|max:100',
             'email' => "required|email|unique:users,email,{$id}",
+            'role' => 'required|string|exists:roles,name',
         ]);
-
+    
+        $role = Role::where('name', $validated['role'])
+            ->where('guard_name', 'sanctum')
+            ->firstOrFail();
+    
         $user->update([
             'name' => $validated['name'],
             'email' => $validated['email'],
         ]);
-
+    
+        $user->syncRoles([$role->name]);
         $user->load('roles');
-
+    
         return response()->json([
             'success' => true,
             'message' => 'User updated successfully',
@@ -144,14 +152,18 @@ class UserController extends Controller
     {
         $user = User::findOrFail($id);
         $this->authorize('assignRole', $user);
-
+    
         $validated = $request->validate([
-            'role' => 'required|string',
+            'role' => 'required|string|exists:roles,name',
         ]);
-
-        $user->syncRoles([$validated['role']]);
+    
+        $role = Role::where('name', $validated['role'])
+            ->where('guard_name', 'sanctum')
+            ->firstOrFail();
+    
+        $user->syncRoles([$role->name]);
         $user->load('roles');
-
+    
         return response()->json([
             'success' => true,
             'message' => 'Role updated successfully',
