@@ -85,51 +85,80 @@ class UserController extends Controller
         ]);
     }
 
+    use App\Models\User;
+    use Illuminate\Http\Request;
+    use Illuminate\Support\Facades\Hash;
+    use Spatie\Permission\Models\Role;
+    
     public function store(Request $request)
     {
         $this->authorize('create', User::class);
-
+    
         $validated = $request->validate([
             'name' => 'required|string|max:100',
             'email' => 'required|email|unique:users,email',
             'password' => 'required|string|min:6',
-            'role' => 'required|string',
+            'role' => 'required|string|exists:roles,name',
         ]);
-
+    
+        $role = Role::where('name', $validated['role'])
+            ->where('guard_name', 'api') // change to 'web' if your app uses web guard
+            ->first();
+    
+        if (! $role) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Selected role does not exist for the correct guard.',
+            ], 422);
+        }
+    
         $user = User::create([
             'name' => $validated['name'],
             'email' => $validated['email'],
             'password' => Hash::make($validated['password']),
             'is_active' => true,
         ]);
-
-        $user->syncRoles([$validated['role']]);
+    
+        $user->syncRoles([$role->name]);
         $user->load('roles');
-
+    
         return response()->json([
             'success' => true,
             'message' => 'User created successfully',
             'data' => $user,
         ], 201);
     }
-
+    
     public function update(Request $request, $id)
     {
         $user = User::findOrFail($id);
         $this->authorize('update', $user);
-
+    
         $validated = $request->validate([
             'name' => 'required|string|max:100',
             'email' => "required|email|unique:users,email,{$id}",
+            'role' => 'required|string|exists:roles,name',
         ]);
-
+    
+        $role = Role::where('name', $validated['role'])
+            ->where('guard_name', 'api') // change to 'web' if your app uses web guard
+            ->first();
+    
+        if (! $role) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Selected role does not exist for the correct guard.',
+            ], 422);
+        }
+    
         $user->update([
             'name' => $validated['name'],
             'email' => $validated['email'],
         ]);
-
+    
+        $user->syncRoles([$role->name]);
         $user->load('roles');
-
+    
         return response()->json([
             'success' => true,
             'message' => 'User updated successfully',
