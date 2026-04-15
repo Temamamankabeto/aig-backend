@@ -72,13 +72,12 @@ class UserController extends Controller
     public function rolesLite()
     {
         $this->authorize('rolesLite', User::class);
-    
+
         $roles = Role::query()
-            ->where('guard_name', $this->roleGuard)
             ->select('id', 'name')
             ->orderBy('name')
             ->get();
-    
+
         return response()->json([
             'success' => true,
             'message' => 'Roles retrieved successfully',
@@ -98,15 +97,8 @@ class UserController extends Controller
         ]);
     
         $role = Role::where('name', $validated['role'])
-            ->where('guard_name', $this->roleGuard)
-            ->first();
-    
-        if (! $role) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Selected role does not exist for the correct guard.',
-            ], 422);
-        }
+            ->where('guard_name', 'sanctum')
+            ->firstOrFail();
     
         $user = User::create([
             'name' => $validated['name'],
@@ -116,45 +108,31 @@ class UserController extends Controller
         ]);
     
         $user->syncRoles([$role->name]);
-        $user->load('roles');
     
         return response()->json([
             'success' => true,
             'message' => 'User created successfully',
-            'data' => $user,
+            'data' => $user->load('roles'),
         ], 201);
     }
-    
+
     public function update(Request $request, $id)
     {
         $user = User::findOrFail($id);
         $this->authorize('update', $user);
-    
+
         $validated = $request->validate([
             'name' => 'required|string|max:100',
             'email' => "required|email|unique:users,email,{$id}",
-            'role' => 'required|string|exists:roles,name',
         ]);
-    
-        $role = Role::where('name', $validated['role'])
-            ->where('guard_name', $this->roleGuard)
-            ->first();
-    
-        if (! $role) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Selected role does not exist for the correct guard.',
-            ], 422);
-        }
-    
+
         $user->update([
             'name' => $validated['name'],
             'email' => $validated['email'],
         ]);
-    
-        $user->syncRoles([$role->name]);
+
         $user->load('roles');
-    
+
         return response()->json([
             'success' => true,
             'message' => 'User updated successfully',
@@ -166,25 +144,14 @@ class UserController extends Controller
     {
         $user = User::findOrFail($id);
         $this->authorize('assignRole', $user);
-    
+
         $validated = $request->validate([
-            'role' => 'required|string|exists:roles,name',
+            'role' => 'required|string',
         ]);
-    
-        $role = Role::where('name', $validated['role'])
-            ->where('guard_name', $this->roleGuard)
-            ->first();
-    
-        if (! $role) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Selected role does not exist for the correct guard.',
-            ], 422);
-        }
-    
-        $user->syncRoles([$role->name]);
+
+        $user->syncRoles([$validated['role']]);
         $user->load('roles');
-    
+
         return response()->json([
             'success' => true,
             'message' => 'Role updated successfully',
