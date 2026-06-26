@@ -11,8 +11,10 @@ class CashShift extends Model
 
     protected $fillable = [
         'cashier_id',
-        'opened_at', 'closed_at',
-        'opening_cash', 'closing_cash',
+        'opened_at',
+        'closed_at',
+        'opening_cash',
+        'closing_cash',
         'status',
     ];
 
@@ -34,7 +36,7 @@ class CashShift extends Model
     }
 
     public function movements()
-{
-    return $this->hasMany(CashShiftMovement::class, 'cash_shift_id');
-}
+    {
+        return $this->hasMany(CashShiftMovement::class, 'cash_shift_id');
+    }
 }

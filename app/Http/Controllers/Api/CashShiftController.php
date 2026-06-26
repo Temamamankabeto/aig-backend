@@ -92,14 +92,14 @@ class CashShiftController extends Controller
     {
         $this->authorize('current', CashShift::class);
         $shift = CashShift::where('cashier_id', $request->user()->id)->where('status', 'open')->latest('id')->first();
-        return response()->json(['success' => true, 'data' => $shift ? $this->cashShiftService->withSummary($shift) : null]);
+        return response()->json(['success' => true, 'message' => 'Current shift loaded.', 'data' => $shift ? $this->cashShiftService->withSummary($shift) : null]);
     }
 
     public function show($id)
     {
         $row = CashShift::with('cashier')->findOrFail($id);
         $this->authorize('view', $row);
-        return response()->json(['success' => true, 'data' => $this->cashShiftService->withSummary($row)]);
+        return response()->json(['success' => true, 'message' => 'Shift loaded.', 'data' => $this->cashShiftService->withSummary($row)]);
     }
 
     public function open(Request $request)
@@ -110,7 +110,7 @@ class CashShiftController extends Controller
         try {
             $row = $this->cashShiftService->open((int) $request->user()->id, $data);
             $this->auditLogger->log($request, $request->user()->id, 'CashShift', $row['id'] ?? null, 'cash_shift_opened', null, $row, 'Cash shift opened.');
-            return response()->json(['success' => true, 'data' => $row], 201);
+            return response()->json(['success' => true, 'message' => 'Shift opened successfully.', 'data' => $row], 201);
         } catch (\RuntimeException $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
         }
@@ -126,7 +126,7 @@ class CashShiftController extends Controller
             $before = $shift->toArray();
             $row = $this->cashShiftService->close((int) $id, $data);
             $this->auditLogger->log($request, $request->user()->id, 'CashShift', (int) $id, 'cash_shift_closed', $before, $row, 'Cash shift closed.');
-            return response()->json(['success' => true, 'data' => $row]);
+            return response()->json(['success' => true, 'message' => 'Shift closed successfully.', 'data' => $row]);
         } catch (\RuntimeException $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
         }

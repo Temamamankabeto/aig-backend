@@ -136,12 +136,12 @@ class ReportController extends Controller
         $rows = $q->selectRaw('
                 ii.id as inventory_item_id,
                 ii.name as inventory_item_name,
-                ii.unit as unit,
+                ii.base_unit as base_unit,
                 it.type,
                 SUM(it.quantity) as total_qty,
                 SUM(it.quantity * COALESCE(it.unit_cost, ii.average_purchase_price)) as cost_sum
             ')
-            ->groupBy('ii.id','ii.name','ii.unit','it.type')
+            ->groupBy('ii.id','ii.name','ii.base_unit','it.type')
             ->orderByDesc('cost_sum')
             ->get();
 

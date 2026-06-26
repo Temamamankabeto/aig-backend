@@ -106,5 +106,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     | Helper data
     |--------------------------------------------------------------------------
     */
+    // Frontend POS calls /api/cashier/waiters-lite. Keep /api/waiters-lite too for backward compatibility.
+    Route::get('/cashier/waiters-lite', [UserController::class, 'waitersLite']);
     Route::get('/waiters-lite', [UserController::class, 'waitersLite']);
 });

@@ -29,22 +29,24 @@ class PaymentService
 
             $shiftId = $data['cash_shift_id'] ?? null;
 
-            if (($data['method'] ?? null) === 'cash') {
-                if ($shiftId) {
-                    $shift = CashShift::lockForUpdate()->findOrFail($shiftId);
-                } else {
-                    $shift = CashShift::where('cashier_id', $userId)
-                        ->where('status', 'open')
-                        ->lockForUpdate()
-                        ->first();
-                }
-
-                if (! $shift || $shift->status !== 'open') {
-                    throw new \RuntimeException('An open cash shift is required for cash payments');
-                }
-
-                $shiftId = $shift->id;
+            if ($shiftId) {
+                $shift = CashShift::lockForUpdate()->findOrFail($shiftId);
+            } else {
+                $shift = CashShift::where('cashier_id', $userId)
+                    ->where('status', 'open')
+                    ->lockForUpdate()
+                    ->first();
             }
+
+            if (! $shift || $shift->status !== 'open') {
+                throw new \RuntimeException('An open cash shift is required for payments');
+            }
+
+            if ((int) $shift->cashier_id !== (int) $userId) {
+                throw new \RuntimeException('You can only record payments on your own open shift');
+            }
+
+            $shiftId = $shift->id;
 
             $amount = round((float) $data['amount'], 2);
             $balance = round((float) $bill->balance, 2);
@@ -181,25 +183,19 @@ class PaymentService
             $newPaidAmount = round((float) $bill->paid_amount + $amount, 2);
             $newBalance = max(0, round((float) $bill->total - $newPaidAmount, 2));
 
-            $shiftId = null;
+            $shift = CashShift::where('cashier_id', $userId)
+                ->where('status', 'open')
+                ->lockForUpdate()
+                ->first();
 
-            if ($payment->method === 'cash') {
-                $shift = CashShift::where('cashier_id', $userId)
-                    ->where('status', 'open')
-                    ->lockForUpdate()
-                    ->first();
-
-                if (! $shift || $shift->status !== 'open') {
-                    throw new \RuntimeException('An open cash shift is required to approve cash payments');
-                }
-
-                $shiftId = $shift->id;
+            if (! $shift || $shift->status !== 'open') {
+                throw new \RuntimeException('An open cash shift is required to approve payments');
             }
 
             $before = $payment->toArray();
             $payment->update([
                 'status' => 'paid',
-                'cash_shift_id' => $shiftId,
+                'cash_shift_id' => $shift->id,
             ]);
 
             if ($bill->issued_at === null) {

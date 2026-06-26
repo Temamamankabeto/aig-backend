@@ -10,7 +10,7 @@ class RecipeItem extends Model
     use HasFactory;
 
     protected $fillable = [
-        'recipe_id', 'inventory_item_id', 'quantity','unit'
+        'recipe_id', 'inventory_item_id', 'quantity', 'base_unit'
     ];
 
     protected $casts = [

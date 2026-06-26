@@ -12,6 +12,8 @@ use App\Models\MenuItem;
 use App\Models\Order;
 use App\Services\InventoryDeductionService;
 use App\Services\WaiterOrderService;
+use App\Services\CreditOrderService;
+use App\Models\CreditAccount;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -20,7 +22,8 @@ class CashierOrderController extends Controller
 {
     public function __construct(
         private WaiterOrderService $waiterOrderService,
-        private InventoryDeductionService $inventoryDeductionService
+        private InventoryDeductionService $inventoryDeductionService,
+        private CreditOrderService $creditOrderService
     ) {
     }
 
@@ -349,6 +352,18 @@ class CashierOrderController extends Controller
             $validated['customer_phone'] = $validated['customer_phone'] ?? null;
             $validated['customer_address'] = $validated['customer_address'] ?? null;
 
+            $isCreditOrder = ($validated['payment_type'] ?? null) === 'credit';
+
+            if ($isCreditOrder && empty($validated['credit_account_id'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Credit account is required for credit orders.',
+                    'errors' => [
+                        'credit_account_id' => ['The credit account field is required.'],
+                    ],
+                ], 422);
+            }
+
             // This makes WaiterOrderService treat it as cashier order:
             // - status confirmed
             // - item_status confirmed
@@ -363,13 +378,20 @@ class CashierOrderController extends Controller
 
             $order->load('bill');
 
+            $creditOrder = $order->creditOrder ?? $order->bill?->creditOrder ?? null;
+
             return response()->json([
                 'success' => true,
-                'message' => 'Cashier order created and confirmed successfully',
+                'message' => $isCreditOrder
+                    ? 'Cashier credit order created successfully'
+                    : 'Cashier order created and confirmed successfully',
                 'data' => [
                     'id' => $order->id,
                     'order_number' => $order->order_number,
                     'status' => $order->status,
+                    'payment_type' => $isCreditOrder ? 'credit' : ($order->payment_type ?? 'regular'),
+                    'credit_status' => $creditOrder->status ?? $order->credit_status ?? null,
+                    'credit_order' => $creditOrder,
                     'bill_id' => $order->bill->id ?? null,
                     'bill' => $order->bill ? [
                         'id' => $order->bill->id,

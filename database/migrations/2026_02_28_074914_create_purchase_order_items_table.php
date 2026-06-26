@@ -14,6 +14,7 @@ return new class extends Migration {
             $table->foreignId('inventory_item_id')->constrained('inventory_items');
 
             $table->decimal('quantity', 12, 3);
+            $table->enum('base_unit', ['g', 'ml', 'pc'])->default('pc');
             $table->decimal('unit_cost', 10, 2);
 
             $table->decimal('line_total', 12, 2);

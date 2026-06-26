@@ -17,6 +17,7 @@ class PublicMenuController extends Controller
     {
         $query = MenuItem::with('category')
             ->where('is_active', true);
+            ->where('is_available', true);
 
         // Filter by type if provided
         if ($request->has('type')) {
@@ -91,6 +92,7 @@ class PublicMenuController extends Controller
         $item = MenuItem::with('category')
             ->where('id', $id)
             ->where('is_active', true)
+            ->where('is_available', true)
             ->first();
 
         if (!$item) {

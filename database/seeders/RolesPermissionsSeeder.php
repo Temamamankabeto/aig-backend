@@ -4,7 +4,6 @@ namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
-
 use App\Models\User;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\Models\Permission;
@@ -14,106 +13,110 @@ class RolesPermissionsSeeder extends Seeder
 {
     public function run(): void
     {
-        // Clear cached roles/permissions
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
-        /**
-         * ✅ Permissions (module.action naming)
-         * Keep them stable. Frontend uses these keys to show/hide UI.
-         */
         $permissions = [
-            // Auth / profile
             'auth.me',
 
-            // Users / RBAC / Admin
-            'users.read', 'users.create', 'users.update', 'users.disable',
+            'users.read', 'users.create', 'users.update', 'users.disable', 'users.delete',
             'roles.read', 'roles.assign',
             'permissions.read',
             'audit.read',
             'settings.update',
+            'settings.update',
 
-            // Menu
-            'menu.read',
-            'menu.create',
-            'menu.update',
-            'menu.disable',
+            'menu.read', 'menu.create', 'menu.update', 'menu.disable',
 
-            // Tables
-            'tables.read',
-            'tables.create',
-            'tables.update',
-            'tables.assign',
-            'tables.transfer',
+            'tables.read', 'tables.create', 'tables.update', 'tables.assign', 'tables.transfer',
 
-            // Orders
-            'orders.read',
-            'orders.create',
-            'orders.update',
-            'orders.cancel',
-            'orders.track',
+            'orders.read', 'orders.create', 'orders.update', 'orders.cancel', 'orders.track',
+            'order_items.add', 'order_items.cancel',
 
-            // Order Items (granular)
-            'order_items.add',
-            'order_items.cancel',
+            'kitchen.queue.read', 'kitchen.queue.update',
+            'bar.queue.read', 'bar.queue.update',
 
-            // Kitchen Queue
-            'kitchen.queue.read',
-            'kitchen.queue.update',   // accept/start/ready/delay/reject
+            'bills.read', 'bills.create', 'bills.discount.request', 'bills.discount.approve',
+            'bills.split', 'bills.merge',
 
-            // Bar Queue
-            'bar.queue.read',
-            'bar.queue.update',       // accept/start/ready/delay/reject
+            'payments.read', 'payments.create', 'payments.refund.request', 'payments.refund.approve',
+            'cash_shift.open', 'cash_shift.close', 'cash_shift.read',
 
-            // Billing
-            'bills.read',
-            'bills.create',
-            'bills.discount.request',
-            'bills.discount.approve',
-            'bills.split',
-            'bills.merge',
+            'inventory.read', 'inventory.create', 'inventory.update', 'inventory.adjust',
+            'inventory.override', 'inventory.destroy', 'inventory.alerts.read',
 
-            // Payments / Cashier
-            'payments.read',
-            'payments.create',
-            'payments.refund.request',
-            'payments.refund.approve',
-            'cash_shift.open',
-            'cash_shift.close',
-            'cash_shift.read',
+            'inventory.items.read', 'inventory.items.create', 'inventory.items.update', 'inventory.items.delete',
 
-            // Inventory
-            'inventory.read',
-            'inventory.create',
-            'inventory.update',
-            'inventory.adjust',
-            'inventory.alerts.read',
-            'inventory.destroy',
-            // Recipes (F&B)
-            'recipes.read',
-            'recipes.create',
-            'recipes.update',
+            'inventory.adjustments.create',
+            'inventory.waste.create',
+            'inventory.movements.read',
+            'inventory.batches.read',
 
-            // Suppliers / Purchase
+            'inventory.low_stock.read',
+            'inventory.valuation.read',
+
+            'recipes.read', 'recipes.create', 'recipes.update', 'recipes.integrity.read',
+
             'suppliers.read', 'suppliers.create', 'suppliers.update',
-            'purchase_orders.read', 'purchase_orders.create', 'purchase_orders.approve',
+
+            'purchases.read', 'purchases.create', 'purchases.approve',
+
+            'purchase_orders.read',
+            'purchase_orders.create',
+            'purchase_orders.submit',
+            'purchase_orders.approve',
+            'purchase_orders.receive',
+
+            'purchase_requests.create',
+            'purchase_requests.approve',
+
+            'stock.receive',
             'stock_receiving.approve',
 
-            // Reports
             'reports.sales.read',
             'reports.staff.read',
             'reports.inventory.read',
             'reports.financial.read',
             'reports.export',
+
+            // Credit
+            'credit.accounts.read',
+            'credit.accounts.create',
+            'credit.accounts.update',
+            'credit.accounts.block',
+
+            'credit.orders.read',
+            'credit.orders.create',
+            'credit.orders.approve',
+            'credit.orders.override',
+            'credit.orders.settle',
+
+            'credit.reports.read',
+
+            // Packages / Catering
+            'packages.read',
+            'packages.create',
+            'packages.update',
+            'packages.delete',
+
+            'package.orders.read',
+            'package.orders.create',
+            'package.orders.update',
+            'package.orders.approve',
+            'package.orders.schedule',
+            'package.orders.prepare',
+            'package.orders.deliver',
+            'package.orders.complete',
+            'package.orders.cancel',
+            'package.orders.settle',
         ];
 
-        // Create permissions (idempotent)
-        foreach ($permissions as $p) {
-            Permission::firstOrCreate(['name' => $p, 'guard_name' => 'sanctum']);
+        foreach ($permissions as $permission) {
+            Permission::firstOrCreate([
+                'name' => $permission,
+                'guard_name' => 'sanctum',
+            ]);
         }
 
-        /**
-         * ✅ Role → Permission mapping
-         */
         $roleMap = [
             'Customer' => [
                 'auth.me',
@@ -126,6 +129,7 @@ class RolesPermissionsSeeder extends Seeder
             'Waiter' => [
                 'auth.me',
                 'menu.read',
+
                 'tables.read',
                 'tables.assign',
                 'tables.transfer',
@@ -137,11 +141,22 @@ class RolesPermissionsSeeder extends Seeder
 
                 'order_items.add',
                 'order_items.cancel',
+
+                // Waiter can only read credit accounts if credit selection is needed,
+                // but should not create/update/block credit accounts.
+                'credit.accounts.read',
+                'credit.orders.create',
+
+                'package.orders.read',
             ],
 
             'Cashier' => [
                 'auth.me',
+
+                'users.read', // REQUIRED FOR /cashier/waiters-lite
+
                 'orders.read',
+                'orders.create',
                 'orders.track',
 
                 'bills.read',
@@ -157,6 +172,75 @@ class RolesPermissionsSeeder extends Seeder
                 'cash_shift.open',
                 'cash_shift.close',
                 'cash_shift.read',
+
+                // Credit payment/settlement
+                'credit.accounts.read',
+                'credit.orders.read',
+                'credit.orders.create',
+                'credit.orders.settle',
+
+                // Package payment/settlement
+                'package.orders.read',
+                'package.orders.settle',
+            ],
+
+            'Kitchen Staff' => [
+                'auth.me',
+                'menu.read',
+
+                'kitchen.queue.read',
+                'kitchen.queue.update',
+
+                'package.orders.read',
+                'package.orders.prepare',
+            ],
+
+            'Barman' => [
+                'auth.me',
+                'menu.read',
+
+                'bar.queue.read',
+                'bar.queue.update',
+
+                'package.orders.read',
+                'package.orders.prepare',
+            ],
+
+            'Purchaser' => [
+                'auth.me',
+
+                'suppliers.read',
+                'suppliers.create',
+                'suppliers.update',
+
+                'purchase_orders.read',
+                'purchase_orders.create',
+                'purchase_orders.submit',
+
+                'purchase_requests.create',
+
+                'purchases.read',
+                'purchases.create',
+            ],
+
+            'Store Keeper' => [
+                'auth.me',
+
+                'inventory.read',
+                'inventory.items.read',
+                'inventory.adjust',
+                'inventory.adjustments.create',
+                'inventory.waste.create',
+                'inventory.movements.read',
+                'inventory.batches.read',
+
+                'stock.receive',
+
+                'purchase_orders.read',
+                'purchase_orders.receive',
+
+                // FIXED: this must be inside Store Keeper array
+                'package.orders.read',
             ],
 
             'F&B Controller' => [
@@ -170,29 +254,26 @@ class RolesPermissionsSeeder extends Seeder
                 'inventory.read',
                 'inventory.create',
                 'inventory.update',
-                'inventory.adjust',
+                'inventory.items.read',
+                'inventory.items.create',
+                'inventory.items.update',
                 'inventory.alerts.read',
+                'inventory.low_stock.read',
+                'inventory.valuation.read',
 
                 'recipes.read',
                 'recipes.create',
                 'recipes.update',
+                'recipes.integrity.read',
 
-                'suppliers.read', 'suppliers.create', 'suppliers.update',
-                'purchase_orders.read', 'purchase_orders.create',
                 'stock_receiving.approve',
-            ],
-
-            'Barman' => [
-                'auth.me',
-                'bar.queue.read',
-                'bar.queue.update',
-                'menu.read',
             ],
 
             'Manager' => [
                 'auth.me',
 
                 'tables.read',
+
                 'orders.read',
                 'orders.update',
                 'orders.cancel',
@@ -200,13 +281,48 @@ class RolesPermissionsSeeder extends Seeder
                 'kitchen.queue.read',
                 'bar.queue.read',
 
+                'purchase_orders.read',
+                'purchase_orders.approve',
+                'purchase_requests.approve',
+
+                'inventory.read',
+                'inventory.items.read',
+                'inventory.low_stock.read',
+                'inventory.valuation.read',
+                'inventory.movements.read',
+
+                'bills.discount.approve',
+
                 'reports.sales.read',
                 'reports.staff.read',
                 'reports.inventory.read',
                 'reports.export',
 
-                'bills.discount.approve',
-                'purchase_orders.approve',
+                // Credit management
+                'credit.accounts.read',
+                'credit.accounts.update',
+                'credit.accounts.block',
+                'credit.orders.read',
+                'credit.orders.approve',
+                'credit.orders.override',
+                'credit.reports.read',
+
+                // Catering / package management
+                'packages.read',
+                'packages.create',
+                'packages.update',
+                'packages.delete',
+
+                'package.orders.read',
+                'package.orders.create',
+                'package.orders.update',
+                'package.orders.approve',
+                'package.orders.schedule',
+                'package.orders.prepare',
+                'package.orders.deliver',
+                'package.orders.complete',
+                'package.orders.cancel',
+                'package.orders.settle',
             ],
 
             'Finance' => [
@@ -221,28 +337,46 @@ class RolesPermissionsSeeder extends Seeder
                 'reports.export',
 
                 'audit.read',
-            ],
 
-            // Admin gets everything
-            'General Admin' => Permission::all()->pluck('name')->toArray(),
+                // Full credit operation
+                'credit.accounts.read',
+                'credit.accounts.create',
+                'credit.accounts.update',
+                'credit.accounts.block',
+
+                'credit.orders.read',
+                'credit.orders.approve',
+                'credit.orders.settle',
+
+                'credit.reports.read',
+
+                // Package settlement
+                'package.orders.read',
+                'package.orders.settle',
+            ],
         ];
 
-        // Create roles + assign permissions
-        foreach ($roleMap as $roleName => $perms) {
-            $role = Role::firstOrCreate(['name' => $roleName, 'guard_name' => 'sanctum']);
-            $role->syncPermissions($perms);
+        foreach ($roleMap as $roleName => $permissionsForRole) {
+            $role = Role::firstOrCreate([
+                'name' => $roleName,
+                'guard_name' => 'sanctum',
+            ]);
+
+            $role->syncPermissions($permissionsForRole);
         }
 
-        /**
-         * ✅ Create default admin user
-         * Change email/password after first login.
-         */
-        $adminEmail = 'admin@aig.com';
+        $generalAdmin = Role::firstOrCreate([
+            'name' => 'General Admin',
+            'guard_name' => 'sanctum',
+        ]);
+
+        $generalAdmin->syncPermissions(Permission::where('guard_name', 'sanctum')->pluck('name')->toArray());
+
         $admin = User::firstOrCreate(
-            ['email' => $adminEmail],
+            ['email' => 'admin@aig.com'],
             [
                 'name' => 'General Admin',
-                'phone' => '+1234567890', // Required field
+                'phone' => '+1234567890',
                 'password' => Hash::make('Admin@12345'),
             ]
         );
@@ -250,5 +384,7 @@ class RolesPermissionsSeeder extends Seeder
         if (!$admin->hasRole('General Admin')) {
             $admin->assignRole('General Admin');
         }
+
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
     }
 }

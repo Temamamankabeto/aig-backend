@@ -8,8 +8,18 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 class MenuCategory extends Model
 {
     use HasFactory;
-protected $table = 'menu_categories';
-   protected $fillable = ['name','type','icon','description','sort_order','is_active', 'image_path'];
+    protected $table = 'menu_categories';
+
+    protected $fillable = [
+        'name',
+        // Legacy DB column only. Menu item type controls kitchen/bar routing.
+        'type',
+        'icon',
+        'description',
+        'sort_order',
+        'is_active',
+        'image_path',
+    ];
 
     protected $casts = [
           'is_active' => 'boolean',

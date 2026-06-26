@@ -8,16 +8,37 @@ use App\Models\InventoryTransaction;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Recipe;
+use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 class InventoryDeductionService
 {
+    /**
+     * Use this method anywhere an order item is moved to confirmed.
+     * It updates the item status and deducts inventory in the same DB transaction.
+     */
+    public function confirmAndDeductForOrderItem(OrderItem $orderItem, ?int $userId = null): void
+    {
+        DB::transaction(function () use ($orderItem, $userId) {
+            $lockedOrderItem = OrderItem::query()
+                ->lockForUpdate()
+                ->findOrFail($orderItem->id);
+
+            if ($lockedOrderItem->item_status !== 'confirmed') {
+                $lockedOrderItem->item_status = 'confirmed';
+                $lockedOrderItem->save();
+            }
+
+            $this->deductForOrderItem($lockedOrderItem->fresh(), $userId);
+        });
+    }
+
     public function deductForOrderItem(OrderItem $orderItem, ?int $userId = null): void
     {
         DB::transaction(function () use ($orderItem, $userId) {
             $lockedOrderItem = OrderItem::query()
-                ->with(['menuItem.directInventoryItem'])
+                ->with(['order', 'menuItem.directInventoryItem', 'menuItem.recipe.items.inventoryItem'])
                 ->lockForUpdate()
                 ->findOrFail($orderItem->id);
 
@@ -26,7 +47,7 @@ class InventoryDeductionService
             }
 
             $menuItem = $lockedOrderItem->menuItem;
-            if (!$menuItem) {
+            if (! $menuItem) {
                 throw new RuntimeException('Order item menu item was not found.');
             }
 
@@ -39,12 +60,17 @@ class InventoryDeductionService
                 return;
             }
 
+            $orderLabel = $lockedOrderItem->order?->order_number
+                ? $lockedOrderItem->order->order_number
+                : (string) $lockedOrderItem->order_id;
+
             if ($trackingMode === 'direct') {
-                if (!$menuItem->direct_inventory_item_id) {
+                if (! $menuItem->direct_inventory_item_id) {
                     throw new RuntimeException("Direct inventory item is not linked for menu item {$menuItem->name}.");
                 }
 
                 $inventoryItem = InventoryItem::query()
+                    ->with('batches')
                     ->lockForUpdate()
                     ->findOrFail($menuItem->direct_inventory_item_id);
 
@@ -56,8 +82,9 @@ class InventoryDeductionService
                     'order_item',
                     $lockedOrderItem->id,
                     sprintf(
-                        'Auto direct deduction on confirmed item for order #%s - %s',
-                        $lockedOrderItem->order_id,
+                        'Auto direct deduction when order item was confirmed. Order: %s, order item #%s, menu item: %s.',
+                        $orderLabel,
+                        $lockedOrderItem->id,
                         $menuItem->name
                     ),
                     $userId
@@ -69,11 +96,11 @@ class InventoryDeductionService
             }
 
             if ($trackingMode === 'recipe') {
-                $recipe = Recipe::with('items.inventoryItem')
+                $recipe = Recipe::with('items.inventoryItem.batches')
                     ->where('menu_item_id', $lockedOrderItem->menu_item_id)
                     ->first();
 
-                if (!$recipe) {
+                if (! $recipe) {
                     throw new RuntimeException("Insufficient configuration: {$menuItem->name} has no recipe.");
                 }
 
@@ -83,21 +110,15 @@ class InventoryDeductionService
 
                 foreach ($recipe->items as $ri) {
                     $inventoryItem = InventoryItem::query()
+                        ->with('batches')
                         ->lockForUpdate()
                         ->find($ri->inventory_item_id);
 
-                    if (!$inventoryItem) {
+                    if (! $inventoryItem) {
                         throw new RuntimeException("Recipe references missing inventory item #{$ri->inventory_item_id}.");
                     }
 
-                    if (!empty($inventoryItem->unit) && !empty($ri->unit) && $inventoryItem->unit !== $ri->unit) {
-                        throw new RuntimeException(
-                            "Unit mismatch for {$inventoryItem->name}: recipe uses {$ri->unit}, inventory uses {$inventoryItem->unit}."
-                        );
-                    }
-
                     $neededQty = round((float) $ri->quantity * (float) $lockedOrderItem->quantity, 3);
-
                     if ($neededQty <= 0) {
                         continue;
                     }
@@ -108,9 +129,10 @@ class InventoryDeductionService
                         'order_item',
                         $lockedOrderItem->id,
                         sprintf(
-                            'Auto recipe deduction on confirmed item for order #%s - %s',
-                            $lockedOrderItem->order_id,
-                            $lockedOrderItem->menuItem?->name ?? 'Unknown item'
+                            'Auto recipe deduction when order item was confirmed. Order: %s, order item #%s, menu item: %s.',
+                            $orderLabel,
+                            $lockedOrderItem->id,
+                            $menuItem->name
                         ),
                         $userId
                     );
@@ -155,12 +177,12 @@ class InventoryDeductionService
                 ->lockForUpdate()
                 ->findOrFail($orderItem->id);
 
-            if (!$lockedOrderItem->inventory_deducted_at) {
+            if (! $lockedOrderItem->inventory_deducted_at) {
                 return;
             }
 
             $menuItem = $lockedOrderItem->menuItem;
-            if (!$menuItem) {
+            if (! $menuItem) {
                 return;
             }
 
@@ -191,7 +213,7 @@ class InventoryDeductionService
             }
 
             if ($trackingMode === 'recipe') {
-                $recipe = Recipe::with('items')
+                $recipe = Recipe::with('items.inventoryItem')
                     ->where('menu_item_id', $lockedOrderItem->menu_item_id)
                     ->first();
 
@@ -201,12 +223,11 @@ class InventoryDeductionService
                             ->lockForUpdate()
                             ->find($ri->inventory_item_id);
 
-                        if (!$inventoryItem) {
+                        if (! $inventoryItem) {
                             continue;
                         }
 
                         $restoreQty = round((float) $ri->quantity * (float) $lockedOrderItem->quantity, 3);
-
                         if ($restoreQty <= 0) {
                             continue;
                         }
@@ -236,21 +257,38 @@ class InventoryDeductionService
         string $note,
         ?int $userId
     ): void {
-        if ((float) $inventoryItem->current_stock < $neededQty) {
+        $inventoryItem->loadMissing('batches');
+
+        $beforeQty = round((float) $inventoryItem->current_stock, 3);
+        $usableBatchQty = round((float) $inventoryItem->batches
+            ->filter(fn ($batch) => ! $batch->isExpired() && (float) $batch->remaining_qty > 0)
+            ->sum(fn ($batch) => (float) $batch->remaining_qty), 3);
+
+        $hasBatchTracking = $inventoryItem->batches->isNotEmpty();
+        $overrideAllowed = $userId ? $this->userCanOverride($userId) : false;
+
+        if ($hasBatchTracking && $usableBatchQty < $neededQty && ! $overrideAllowed) {
+            throw new RuntimeException("Insufficient usable stock for {$inventoryItem->name}");
+        }
+
+        if ($beforeQty < $neededQty && ! $overrideAllowed) {
             throw new RuntimeException("Insufficient stock for {$inventoryItem->name}");
         }
 
-        $beforeQty = round((float) $inventoryItem->current_stock, 3);
         $afterQty = round($beforeQty - $neededQty, 3);
-
         $inventoryItem->current_stock = $afterQty;
         $inventoryItem->save();
 
         $remainingToConsume = $neededQty;
+        $consumedBatches = [];
 
         $batches = InventoryItemBatch::query()
             ->where('inventory_item_id', $inventoryItem->id)
             ->where('remaining_qty', '>', 0)
+            ->where(function ($query) {
+                $query->whereNull('expiry_date')
+                    ->orWhereDate('expiry_date', '>=', now()->toDateString());
+            })
             ->orderByRaw('CASE WHEN expiry_date IS NULL THEN 1 ELSE 0 END')
             ->orderBy('expiry_date')
             ->orderBy('id')
@@ -263,11 +301,23 @@ class InventoryDeductionService
             }
 
             $consume = min((float) $batch->remaining_qty, $remainingToConsume);
-
             $batch->remaining_qty = round((float) $batch->remaining_qty - $consume, 3);
             $batch->save();
-
             $remainingToConsume = round($remainingToConsume - $consume, 3);
+
+            $consumedBatches[] = sprintf(
+                'BATCH-%s:%s',
+                str_pad((string) $batch->id, 5, '0', STR_PAD_LEFT),
+                number_format($consume, 3, '.', '')
+            );
+        }
+
+        if (! empty($consumedBatches)) {
+            $note .= ' Consumed batches: ' . implode(', ', $consumedBatches) . '.';
+        }
+
+        if ($remainingToConsume > 0 && $overrideAllowed) {
+            $note .= ' Deduction used inventory override for shortage quantity: ' . number_format($remainingToConsume, 3, '.', '') . '.';
         }
 
         InventoryTransaction::create([
@@ -277,7 +327,7 @@ class InventoryDeductionService
             'unit_cost' => $inventoryItem->average_purchase_price,
             'before_quantity' => $beforeQty,
             'after_quantity' => $afterQty,
-            'reference_type' => $referenceType,
+            'reference_type' => $overrideAllowed ? $referenceType . '_override' : $referenceType,
             'reference_id' => $referenceId,
             'note' => $note,
             'created_by' => $userId,
@@ -310,5 +360,11 @@ class InventoryDeductionService
             'note' => $note,
             'created_by' => $userId,
         ]);
+    }
+
+    private function userCanOverride(int $userId): bool
+    {
+        $user = User::find($userId);
+        return $user ? $user->can('inventory.override') : false;
     }
 }

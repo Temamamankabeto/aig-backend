@@ -2,8 +2,8 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
 
 class Supplier extends Model
 {
@@ -11,7 +11,7 @@ class Supplier extends Model
 
     protected $fillable = [
         'name', 'phone', 'email', 'address', 'is_active',
-        'tax_id', 'credit_days',
+        'tax_id', 'credit_days', 'contract_terms', 'delivery_performance_notes', 'notes',
     ];
 
     protected $casts = [

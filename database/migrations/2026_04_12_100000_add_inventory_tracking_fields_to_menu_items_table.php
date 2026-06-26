@@ -9,25 +9,35 @@ return new class extends Migration {
     public function up(): void
     {
         Schema::table('menu_items', function (Blueprint $table) {
-            if (! Schema::hasColumn('menu_items', 'inventory_tracking_mode')) {
-                $table->enum('inventory_tracking_mode', ['recipe', 'direct', 'none'])
-                    ->default('recipe')
-                    ->after('has_ingredients');
+            if (!Schema::hasColumn('menu_items', 'inventory_tracking_mode')) {
+                $table->string('inventory_tracking_mode', 20)
+                    ->default('recipe');
             }
 
-            if (! Schema::hasColumn('menu_items', 'direct_inventory_item_id')) {
+            if (!Schema::hasColumn('menu_items', 'direct_inventory_item_id')) {
                 $table->foreignId('direct_inventory_item_id')
                     ->nullable()
-                    ->after('inventory_tracking_mode')
                     ->constrained('inventory_items')
                     ->nullOnDelete();
             }
         });
 
-        DB::table('menu_items')
-            ->update([
-                'inventory_tracking_mode' => DB::raw("CASE WHEN has_ingredients = 1 THEN 'recipe' ELSE 'none' END")
-            ]);
+        DB::statement("
+            UPDATE menu_items
+            SET inventory_tracking_mode =
+                CASE
+                    WHEN has_ingredients IS TRUE THEN 'recipe'
+                    ELSE 'none'
+                END
+        ");
+
+        DB::statement("ALTER TABLE menu_items DROP CONSTRAINT IF EXISTS menu_items_inventory_tracking_mode_check");
+
+        DB::statement("
+            ALTER TABLE menu_items
+            ADD CONSTRAINT menu_items_inventory_tracking_mode_check
+            CHECK (inventory_tracking_mode IN ('recipe', 'direct', 'none'))
+        ");
     }
 
     public function down(): void

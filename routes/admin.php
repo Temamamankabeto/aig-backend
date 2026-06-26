@@ -89,6 +89,7 @@ Route::post('/menu/items/{id}/image', [MenuItemController::class, 'uploadImage']
     Route::post('/users', [UserController::class, 'store']);
     Route::put('/users/{id}', [UserController::class, 'update']);
     Route::patch('/users/{id}/toggle', [UserController::class, 'toggle']);
+    Route::delete('/users/{id}', [UserController::class, 'destroy']);
     Route::post('/users/{id}/reset-password', [UserController::class, 'resetPassword']);
     Route::post('/users/{id}/roles', [UserController::class, 'assignRole']);
 
@@ -103,8 +104,14 @@ Route::post('/menu/items/{id}/image', [MenuItemController::class, 'uploadImage']
     Route::get('/tables/{id}', [DiningTableController::class, 'show']);
     Route::post('/tables', [DiningTableController::class, 'store']);
     Route::put('/tables/{id}', [DiningTableController::class, 'update']);
+    Route::delete('/tables/{id}', [DiningTableController::class, 'destroy']);
     Route::post('/tables/{id}/assign', [DiningTableController::class, 'assignWaiter']);
     Route::post('/tables/{id}/transfer', [DiningTableController::class, 'transfer']);
+    Route::post('/tables/{id}/transfer-orders', [DiningTableController::class, 'transferOrders']);
+    Route::delete('/tables/{id}/assign', [DiningTableController::class, 'unassignWaiter']);
+    Route::get('/tables-summary', [DiningTableController::class, 'summary']);
+    Route::get('/tables-sections', [DiningTableController::class, 'sections']);
+    Route::get('/tables/{id}/history', [DiningTableController::class, 'history']);
     Route::patch('/tables/{id}/status', [DiningTableController::class, 'setStatus']);
     Route::patch('/tables/{id}/toggle', [DiningTableController::class, 'toggleActive']);
 
@@ -169,19 +176,25 @@ Route::post('/menu/items/{id}/image', [MenuItemController::class, 'uploadImage']
     Route::get('/inventory/transactions', [InventoryTransactionController::class, 'index']);
     Route::post('/inventory/items/{id}/adjust', [InventoryTransactionController::class, 'adjust']);
     Route::post('/inventory/items/{id}/waste', [InventoryTransactionController::class, 'waste']);
+    Route::post('/inventory/items/{id}/transfer', [InventoryTransactionController::class, 'transfer']);
 
     // Suppliers
     Route::get('/suppliers', [SupplierController::class, 'index']);
     Route::get('/suppliers/{id}', [SupplierController::class, 'show']);
+    Route::get('/suppliers/{id}/performance', [SupplierController::class, 'performance']);
     Route::post('/suppliers', [SupplierController::class, 'store']);
     Route::put('/suppliers/{id}', [SupplierController::class, 'update']);
 
     // Purchase Orders
     Route::get('/purchase-orders', [PurchaseOrderController::class, 'index']);
     Route::get('/purchase-orders/{id}', [PurchaseOrderController::class, 'show']);
+    Route::get('/purchase-orders/{id}/history', [PurchaseOrderController::class, 'history']);
     Route::post('/purchase-orders', [PurchaseOrderController::class, 'store']);
+    Route::post('/purchase-orders/{id}/submit', [PurchaseOrderController::class, 'submit']);
     Route::post('/purchase-orders/{id}/approve', [PurchaseOrderController::class, 'approve']);
     Route::post('/purchase-orders/{id}/cancel', [PurchaseOrderController::class, 'cancel']);
+    Route::get('/stock-receivings', [StockReceivingController::class, 'index']);
+    Route::get('/stock-receivings/{id}', [StockReceivingController::class, 'show']);
     Route::post('/purchase-orders/{id}/receive', [StockReceivingController::class, 'receive']);
 
     // Recipes

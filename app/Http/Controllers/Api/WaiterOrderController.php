@@ -131,7 +131,33 @@ class WaiterOrderController extends Controller
         if ($request->filled('status')) {
             $query->where('status', $request->status);
         }
-    
+
+        if ($request->filled('payment_status')) {
+            $query->whereHas('bill', function ($bill) use ($request) {
+                $bill->where('status', $request->payment_status);
+            });
+        }
+
+        $period = $request->get('period');
+        if ($period === 'today') {
+            $query->whereDate('ordered_at', now()->toDateString());
+        } elseif ($period === 'this_week') {
+            $query->whereBetween('ordered_at', [now()->startOfWeek(), now()->endOfWeek()]);
+        } elseif ($period === 'this_month') {
+            $query->whereYear('ordered_at', now()->year)->whereMonth('ordered_at', now()->month);
+        } elseif ($period === 'this_year') {
+            $query->whereYear('ordered_at', now()->year);
+        } elseif ($period === 'custom') {
+            if ($request->filled('date_from')) {
+                $query->whereDate('ordered_at', '>=', $request->date_from);
+            }
+            if ($request->filled('date_to')) {
+                $query->whereDate('ordered_at', '<=', $request->date_to);
+            }
+        }
+
+        $reportQuery = clone $query;
+
         $orders = $query
             ->orderByDesc('ordered_at')
             ->paginate($perPage);
@@ -152,6 +178,10 @@ class WaiterOrderController extends Controller
                 'last_page' => $orders->lastPage(),
                 'from' => $orders->firstItem(),
                 'to' => $orders->lastItem(),
+                'report' => [
+                    'total_orders' => (clone $reportQuery)->count(),
+                    'total_cost' => (float) (clone $reportQuery)->sum('total'),
+                ],
             ],
         ]);
     }
@@ -206,7 +236,7 @@ class WaiterOrderController extends Controller
                 return [
                     'id' => $table->id,
                     'table_number' => (string) $table->table_number,
-                    'name' => 'Table ' . $table->table_number,
+                    'name' => $table->name ?: ('Table ' . $table->table_number),
                     'capacity' => $table->capacity,
                     'section' => $table->section ?? null,
                     'status' => $table->status,
@@ -237,6 +267,20 @@ public function store(StoreOrderRequest $request)
         $userId = (int) auth()->id();
 
         $orderType = $validated['order_type'] ?? null;
+
+        if (!in_array($orderType, ['dine_in', 'takeaway'], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Waiter can create dine-in and takeaway orders only.',
+                'errors' => [
+                    'order_type' => ['Waiter can create dine-in and takeaway orders only.'],
+                ],
+            ], 422);
+        }
+
+        // Payment type is intentionally not set at order creation.
+        // Cashier records cash/card/mobile/transfer/credit later during payment.
+        unset($validated['payment_type'], $validated['credit_account_id'], $validated['credit_due_date'], $validated['credit_notes'], $validated['override_credit_limit']);
 
         $validated['waiter_id'] = $userId;
         $validated['created_by'] = $userId;
@@ -1020,22 +1064,14 @@ $order = Order::with(['items.menuItem', 'table', 'bill'])
 ->lockForUpdate()
 ->findOrFail($id);
 
-if ($order->status !== 'pending') {
+if (!in_array($order->status, ['pending', 'confirmed'], true)) {
 return response()->json([
 'success' => false,
-'message' => 'Only pending orders can be confirmed.',
+'message' => 'Only pending or confirmed orders can be confirmed.',
 ], 422);
 }
 
-if ($order->created_at && now()->lt($order->created_at->copy()->addMinutes(5))) {
-return response()->json([
-'success' => false,
-'message' => 'Orders can be confirmed only after 5 minutes from creation.',
-'confirmable_at' => $order->created_at->copy()->addMinutes(5)->toDateTimeString(),
-], 422);
-}
-
-// Update order status
+// Update order status. Confirm is idempotent because waiter orders are confirmed at creation.
 $order->update([
 'status' => 'confirmed',
 'waiter_id' => auth()->id(),
@@ -1055,7 +1091,7 @@ $this->inventoryDeductionService->deductForOrderItem($orderItem->fresh(), (int) 
 // Update bill/payment status
 if ($order->bill) {
 $order->bill->update([
-'status' => 'confirmed', // or 'issued' depending on your workflow
+'status' => 'issued',
 ]);
 }
 

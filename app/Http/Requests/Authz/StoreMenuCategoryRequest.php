@@ -3,7 +3,6 @@
 namespace App\Http\Requests\Authz;
 
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 
 class StoreMenuCategoryRequest extends FormRequest
 {
@@ -16,10 +15,10 @@ class StoreMenuCategoryRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:255'],
-            'type' => ['required', Rule::in(['food', 'drink'])],
+            'description' => ['nullable', 'string'],
             'icon' => ['nullable', 'string', 'max:100'],
             'sort_order' => ['nullable', 'integer', 'min:0', 'max:1000000'],
-            'is_active' => ['boolean'],
+            'is_active' => ['sometimes', 'boolean'],
         ];
     }
 }

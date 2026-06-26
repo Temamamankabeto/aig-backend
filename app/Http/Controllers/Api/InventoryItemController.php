@@ -5,53 +5,84 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\InventoryItem;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class InventoryItemController extends Controller
 {
     public function index(Request $request)
     {
         $this->authorize('viewAny', InventoryItem::class);
-
-        $q = InventoryItem::query()->orderBy('id', 'desc');
-
+    
+        $q = InventoryItem::query()
+            ->with(['batches'])
+            ->orderBy('id', 'desc');
+    
         if ($request->filled('search')) {
-            $search = trim($request->search);
+            $search = trim((string) $request->search);
+    
             $q->where(function ($query) use ($search) {
                 $query->where('name', 'like', "%{$search}%")
-                      ->orWhere('unit', 'like', "%{$search}%");
+                      ->orWhere('base_unit', 'like', "%{$search}%")
+                      ->orWhere('sku', 'like', "%{$search}%");
             });
         }
-
-        if ($request->filled('unit')) {
-            $q->where('unit', $request->unit);
+    
+        if ($request->filled('base_unit')) {
+            $q->where('base_unit', $request->base_unit);
         }
-
-        if ($request->filled('low_stock')) {
-            $lowStock = filter_var($request->low_stock, FILTER_VALIDATE_BOOLEAN);
-            if ($lowStock) {
-                $q->whereColumn('current_stock', '<=', 'minimum_quantity');
+    
+        if ($request->filled('is_active')) {
+            $q->where(
+                'is_active',
+                filter_var($request->is_active, FILTER_VALIDATE_BOOLEAN)
+            );
+        }
+    
+        if ($request->filled('status')) {
+    
+            switch ($request->status) {
+    
+                case 'low_stock':
+                    $q->whereColumn('current_stock', '<=', 'minimum_quantity');
+                    break;
+    
+                case 'out_of_stock':
+                    $q->where('current_stock', '=', 0);
+                    break;
+    
+                case 'in_stock':
+                    $q->whereColumn('current_stock', '>', 'minimum_quantity');
+                    break;
+    
+                case 'expired':
+                    $q->whereHas('batches', function ($query) {
+                        $query->whereDate('expiry_date', '<', now());
+                    });
+                    break;
             }
         }
-
-        $paginatedItems = $q->paginate((int) $request->get('per_page', 20));
-
+    
+        $items = $q->paginate((int) $request->get('per_page', 10));
+    
         return response()->json([
             'success' => true,
-            'data' => $paginatedItems->items(),
+            'data' => $items->items(),
             'meta' => [
-                'current_page' => $paginatedItems->currentPage(),
-                'per_page'     => $paginatedItems->perPage(),
-                'total'        => $paginatedItems->total(),
-                'last_page'    => $paginatedItems->lastPage(),
+                'current_page' => $items->currentPage(),
+                'per_page' => $items->perPage(),
+                'total' => $items->total(),
+                'last_page' => $items->lastPage(),
             ],
         ]);
     }
 
     public function show($id)
     {
-        $row = InventoryItem::with(['transactions' => function ($query) {
-            $query->latest('id');
-        }])->findOrFail($id);
+        $row = InventoryItem::with([
+            'transactions' => fn ($query) => $query->latest('id'),
+            'batches' => fn ($query) => $query->orderByRaw('CASE WHEN expiry_date IS NULL THEN 1 ELSE 0 END')->orderBy('expiry_date')->orderBy('id'),
+            'recipeItems.recipe.menuItem',
+        ])->findOrFail($id);
 
         $this->authorize('view', $row);
 
@@ -67,22 +98,28 @@ class InventoryItemController extends Controller
 
         $data = $request->validate([
             'name' => 'required|string|max:255',
-            'unit' => 'required|string|max:50',
+            'sku' => 'nullable|string|max:100|unique:inventory_items,sku',
+            'base_unit' => 'required|in:kg,L,pcs',
             'minimum_quantity' => 'nullable|numeric|min:0',
             'current_stock' => 'nullable|numeric|min:0',
             'average_purchase_price' => 'nullable|numeric|min:0',
+            'is_active' => 'nullable|boolean',
         ]);
 
         $data['minimum_quantity'] = $data['minimum_quantity'] ?? 0;
         $data['current_stock'] = $data['current_stock'] ?? 0;
+        $data['is_active'] = $data['is_active'] ?? true;
 
-        $row = InventoryItem::create($data);
+        return DB::transaction(function () use ($data) {
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Inventory item created successfully',
-            'data' => $row,
-        ], 201);
+            $row = InventoryItem::create($data);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Inventory item created successfully',
+                'data' => $row,
+            ], 201);
+        });
     }
 
     public function update(Request $request, $id)
@@ -92,19 +129,24 @@ class InventoryItemController extends Controller
 
         $data = $request->validate([
             'name' => 'sometimes|required|string|max:255',
-            'unit' => 'sometimes|required|string|max:50',
+            'sku' => 'sometimes|nullable|string|max:100|unique:inventory_items,sku,' . $row->id,
+            'base_unit' => 'sometimes|required|in:kg,L,pcs',
             'minimum_quantity' => 'sometimes|nullable|numeric|min:0',
             'current_stock' => 'sometimes|nullable|numeric|min:0',
             'average_purchase_price' => 'sometimes|nullable|numeric|min:0',
+            'is_active' => 'sometimes|boolean',
         ]);
 
-        $row->update($data);
+        return DB::transaction(function () use ($row, $data) {
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Inventory item updated successfully',
-            'data' => $row->fresh(),
-        ]);
+            $row->update($data);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Inventory item updated successfully',
+                'data' => $row->fresh()->load('batches'),
+            ]);
+        });
     }
 
     public function destroy($id)
@@ -127,27 +169,28 @@ class InventoryItemController extends Controller
         $q = InventoryItem::onlyTrashed()->orderBy('deleted_at', 'desc');
 
         if ($request->filled('search')) {
-            $search = trim($request->search);
+            $search = trim((string) $request->search);
             $q->where(function ($query) use ($search) {
                 $query->where('name', 'like', "%{$search}%")
-                      ->orWhere('unit', 'like', "%{$search}%");
+                    ->orWhere('base_unit', 'like', "%{$search}%")
+                    ->orWhere('sku', 'like', "%{$search}%");
             });
         }
 
-        if ($request->filled('unit')) {
-            $q->where('unit', $request->unit);
+        if ($request->filled('base_unit')) {
+            $q->where('base_unit', $request->base_unit);
         }
 
-        $paginatedItems = $q->paginate((int) $request->get('per_page', 20));
+        $items = $q->paginate((int) $request->get('per_page', 20));
 
         return response()->json([
             'success' => true,
-            'data' => $paginatedItems->items(),
+            'data' => $items->items(),
             'meta' => [
-                'current_page' => $paginatedItems->currentPage(),
-                'per_page'     => $paginatedItems->perPage(),
-                'total'        => $paginatedItems->total(),
-                'last_page'    => $paginatedItems->lastPage(),
+                'current_page' => $items->currentPage(),
+                'per_page' => $items->perPage(),
+                'total' => $items->total(),
+                'last_page' => $items->lastPage(),
             ],
         ]);
     }
@@ -169,7 +212,7 @@ class InventoryItemController extends Controller
     public function forceDelete($id)
     {
         $row = InventoryItem::onlyTrashed()->findOrFail($id);
-        $this->authorize('delete', $row);
+        $this->authorize('forceDelete', $row);
 
         $row->forceDelete();
 

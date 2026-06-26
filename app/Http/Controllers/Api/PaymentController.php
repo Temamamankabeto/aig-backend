@@ -81,13 +81,25 @@ class PaymentController extends Controller
         $this->authorize('create', Payment::class);
     
         $data = $request->validate([
-            'method' => 'required|in:cash,card,mobile,transfer',
+            'method' => 'nullable|in:cash,card,mobile,transfer',
+            'payment_method' => 'nullable|in:cash,card,mobile,transfer',
             'amount' => 'required|numeric|min:0.01',
             'reference' => 'nullable|string|max:255',
+            'reference_number' => 'nullable|string|max:255',
             'paid_at' => 'nullable|date',
             'cash_shift_id' => 'nullable|exists:cash_shifts,id',
             'screenshot_path' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:4096',
         ]);
+
+        $data['method'] = $data['method'] ?? $data['payment_method'] ?? null;
+        $data['reference'] = $data['reference'] ?? $data['reference_number'] ?? null;
+
+        if (! $data['method']) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Payment method is required',
+            ], 422);
+        }
     
         return DB::transaction(function () use ($request, $billId, $data) {
             $bill = Bill::lockForUpdate()
@@ -102,30 +114,33 @@ class PaymentController extends Controller
             }
     
             $shiftId = $data['cash_shift_id'] ?? null;
-    
-            $shift = $shiftId
-                ? CashShift::lockForUpdate()->findOrFail($shiftId)
-                : CashShift::where('cashier_id', $request->user()->id)
-                    ->where('status', 'open')
-                    ->lockForUpdate()
-                    ->first();
-    
-            if (! $shift || $shift->status !== 'open') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'An open cash shift is required for all payments',
-                ], 422);
+            $shift = null;
+
+            if ($data['method'] === 'cash' || $shiftId) {
+                $shift = $shiftId
+                    ? CashShift::lockForUpdate()->findOrFail($shiftId)
+                    : CashShift::where('cashier_id', $request->user()->id)
+                        ->where('status', 'open')
+                        ->lockForUpdate()
+                        ->first();
+
+                if (! $shift || $shift->status !== 'open') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'An open cash shift is required for cash payments',
+                    ], 422);
+                }
+
+                if ((int) $shift->cashier_id !== (int) $request->user()->id) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'You can only record payments on your own open shift',
+                    ], 422);
+                }
+
+                $shiftId = $shift->id;
             }
-    
-            if ((int) $shift->cashier_id !== (int) $request->user()->id) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'You can only record payments on your own open shift',
-                ], 422);
-            }
-    
-            $shiftId = $shift->id;
-    
+
             $amount = round((float) $data['amount'], 2);
     
             if ($amount > round((float) $bill->balance, 2)) {
@@ -204,6 +219,31 @@ class PaymentController extends Controller
                 ],
             ], 201);
         });
+    }
+
+
+    public function history(Request $request, $billId)
+    {
+        $this->authorize('viewAny', Payment::class);
+
+        $q = Payment::query()
+            ->with(['receiver', 'cashShift'])
+            ->where('bill_id', $billId)
+            ->orderByDesc('id');
+
+        $payments = $q->paginate(max(1, min((int) $request->query('per_page', 20), 100)));
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Payment history loaded successfully',
+            'data' => $payments->items(),
+            'meta' => [
+                'current_page' => $payments->currentPage(),
+                'last_page' => $payments->lastPage(),
+                'per_page' => $payments->perPage(),
+                'total' => $payments->total(),
+            ],
+        ]);
     }
 
     public function submitByWaiter(Request $request)

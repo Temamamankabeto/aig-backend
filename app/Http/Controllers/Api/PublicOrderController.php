@@ -26,12 +26,17 @@ class PublicOrderController extends Controller
     public function tables()
     {
         $tables = DiningTable::where('is_active', true)
+            ->where('is_public', true)
+            ->where('status', 'available')
+            ->orderBy('sort_order')
             ->orderBy('table_number')
             ->get()
             ->map(fn ($t) => [
                 'id' => $t->id,
                 'table_number' => $t->table_number,
+                'name' => $t->name ?: ('Table ' . $t->table_number),
                 'capacity' => $t->capacity,
+                'section' => $t->section,
                 'status' => $t->status,
             ]);
 
@@ -106,6 +111,16 @@ class PublicOrderController extends Controller
                 'requires_auth' => true,
                 'message' => 'Please login or register before placing a delivery order.',
             ], 401);
+        }
+
+        if ($request->order_type === 'dine_in' && $request->filled('table_id')) {
+            $table = DiningTable::find($request->integer('table_id'));
+            if (! $table || ! $table->is_active || ! ($table->is_public ?? true) || $table->status !== 'available') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Selected table is not available for public dine-in ordering.',
+                ], 422);
+            }
         }
 
         $rules = [

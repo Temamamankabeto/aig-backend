@@ -5,103 +5,266 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\InventoryItem;
 use App\Models\InventoryTransaction;
-use App\Models\KitchenTicket;
-use App\Models\BarTicket;
 use App\Models\MenuItem;
 use App\Models\PurchaseOrder;
-use App\Models\Recipe;
 use App\Models\Supplier;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Schema;
 
 class FoodControllerController extends Controller
 {
     public function dashboard(Request $request)
     {
-        Gate::authorize('food-controller.dashboard');
+        $today = now()->startOfDay();
+        $weekStart = now()->startOfWeek();
+        $monthStart = now()->startOfMonth();
 
-        $lowStockCount = InventoryItem::query()
-            ->whereColumn('current_stock', '<=', 'minimum_quantity')
-            ->count();
+        $statusCounts = Schema::hasTable('purchase_orders')
+            ? PurchaseOrder::query()
+                ->select('status', DB::raw('COUNT(*) as total'))
+                ->groupBy('status')
+                ->pluck('total', 'status')
+            : collect();
 
-        $outOfStockCount = InventoryItem::query()
-            ->where('current_stock', '<=', 0)
-            ->count();
+        $pendingValidation = (int) ($statusCounts['submitted'] ?? 0);
+        $validated = (int) ($statusCounts['food_validated'] ?? 0);
+        $validationRejected = (int) ($statusCounts['validation_rejected'] ?? 0);
+        $approved = (int) ($statusCounts['approved'] ?? 0);
+        $received = (int) (($statusCounts['completed'] ?? 0) + ($statusCounts['partially_received'] ?? 0));
 
-        $recipeIntegrity = DB::table('menu_items as mi')
-            ->leftJoin('recipes as r', 'r.menu_item_id', '=', 'mi.id')
-            ->leftJoin('recipe_items as ri', 'ri.recipe_id', '=', 'r.id')
-            ->leftJoin('inventory_items as ii', 'ii.id', '=', 'ri.inventory_item_id')
-            ->selectRaw('mi.id as menu_item_id, mi.inventory_tracking_mode, mi.direct_inventory_item_id, r.id as recipe_id, COUNT(ri.id) as ingredient_count, SUM(CASE WHEN ii.id IS NULL THEN 1 ELSE 0 END) as missing_inventory_links')
-            ->groupBy('mi.id', 'mi.inventory_tracking_mode', 'mi.direct_inventory_item_id', 'r.id')
-            ->get();
+        $pendingValue = $this->purchaseSum(['submitted']);
+        $monthlyValidatedValue = $this->purchaseSum(['food_validated'], $monthStart);
+        $monthlyApprovedValue = $this->purchaseSum(['approved', 'partially_received', 'completed'], $monthStart);
 
-        $summary = [
-            'menu' => [
-                'total_items' => MenuItem::count(),
-                'food_items' => MenuItem::where('type', 'food')->count(),
-                'drink_items' => MenuItem::where('type', 'drink')->count(),
-                'available_items' => MenuItem::where('is_active', true)->where('is_available', true)->count(),
-                'unavailable_items' => MenuItem::where(function ($q) {
-                    $q->where('is_active', false)->orWhere('is_available', false);
-                })->count(),
-            ],
-            'inventory' => [
-                'total_items' => InventoryItem::count(),
-                'low_stock_items' => $lowStockCount,
-                'out_of_stock_items' => $outOfStockCount,
-                'stock_value' => round((float) InventoryItem::query()->selectRaw('COALESCE(SUM(current_stock * average_purchase_price), 0) as total')->value('total'), 2),
-            ],
-            'recipes' => [
-                'total_recipes' => Recipe::count(),
-                'menu_items_without_recipe' => $recipeIntegrity->where('inventory_tracking_mode', 'recipe')->whereNull('recipe_id')->count(),
-                'recipes_without_ingredients' => $recipeIntegrity->where('inventory_tracking_mode', 'recipe')->whereNotNull('recipe_id')->where('ingredient_count', 0)->count(),
-                'recipes_with_missing_inventory_links' => $recipeIntegrity->where('inventory_tracking_mode', 'recipe')->where('missing_inventory_links', '>', 0)->count(),
-                'direct_items_without_link' => $recipeIntegrity->where('inventory_tracking_mode', 'direct')->whereNull('direct_inventory_item_id')->count(),
-            ],
-            'procurement' => [
-                'suppliers' => Supplier::count(),
-                'draft_purchase_orders' => PurchaseOrder::where('status', 'draft')->count(),
-                'approved_purchase_orders' => PurchaseOrder::where('status', 'approved')->count(),
-                'received_purchase_orders' => PurchaseOrder::where('status', 'received')->count(),
-            ],
-            'operations' => [
-                'kitchen_pending' => KitchenTicket::whereIn('status', ['pending', 'confirmed', 'preparing', 'delayed'])->count(),
-                'bar_pending' => BarTicket::whereIn('status', ['pending', 'confirmed', 'preparing', 'delayed'])->count(),
-            ],
-        ];
+        $todayValidated = Schema::hasTable('purchase_orders')
+            ? PurchaseOrder::where('status', 'food_validated')->where('updated_at', '>=', $today)->count()
+            : 0;
 
-        $lowStockItems = InventoryItem::query()
-            ->whereColumn('current_stock', '<=', 'minimum_quantity')
-            ->orderBy('current_stock')
-            ->limit(10)
-            ->get(['id', 'name', 'unit', 'current_stock', 'minimum_quantity', 'average_purchase_price']);
+        $weekRejected = Schema::hasTable('purchase_orders')
+            ? PurchaseOrder::where('status', 'validation_rejected')->where('updated_at', '>=', $weekStart)->count()
+            : 0;
 
-        $recentTransactions = InventoryTransaction::query()
-            ->with('inventoryItem:id,name,unit')
-            ->latest('id')
-            ->limit(10)
-            ->get();
+        $lowStockCount = $this->inventoryHas('current_stock', 'minimum_quantity')
+            ? InventoryItem::whereColumn('current_stock', '<=', 'minimum_quantity')->count()
+            : 0;
 
-        $pendingPurchaseOrders = PurchaseOrder::query()
-            ->with(['supplier:id,name'])
-            ->whereIn('status', ['draft', 'approved'])
-            ->latest('id')
-            ->limit(10)
-            ->get();
+        $outOfStockCount = $this->inventoryHas('current_stock')
+            ? InventoryItem::where('current_stock', '<=', 0)->count()
+            : 0;
+
+        $recentValidationRequests = Schema::hasTable('purchase_orders')
+            ? PurchaseOrder::with(['supplier:id,name', 'items.inventoryItem:id,name,base_unit'])
+                ->whereIn('status', ['submitted', 'food_validated', 'validation_rejected'])
+                ->latest('updated_at')
+                ->limit(8)
+                ->get()
+                ->map(fn (PurchaseOrder $order) => [
+                    'id' => $order->id,
+                    'po_number' => $order->po_number,
+                    'supplier' => $order->supplier?->name ?? 'Unknown supplier',
+                    'items_count' => $order->items->count(),
+                    'amount' => (float) ($order->total ?? 0),
+                    'status' => $order->status,
+                    'created_at' => optional($order->created_at)->toDateTimeString(),
+                    'updated_at' => optional($order->updated_at)->toDateTimeString(),
+                ])
+                ->values()
+            : collect();
+
+        $validationTrend = $this->buildTrend();
+
+        $lowStockItems = $this->inventoryHas('current_stock', 'minimum_quantity')
+            ? InventoryItem::whereColumn('current_stock', '<=', 'minimum_quantity')
+                ->orderBy('current_stock')
+                ->limit(8)
+                ->get(['id', 'name', 'base_unit', 'current_stock', 'minimum_quantity', 'average_purchase_price'])
+            : collect();
+
+        $recentTransactions = Schema::hasTable('inventory_transactions')
+            ? InventoryTransaction::with('inventoryItem:id,name,base_unit')->latest('id')->limit(8)->get()
+            : collect();
+
+        $kitchenPending = $this->ticketCount('kitchen_tickets');
+        $barPending = $this->ticketCount('bar_tickets');
+        $recipeIssueCount = $this->recipeIssueCount();
 
         return response()->json([
             'success' => true,
-            'role' => 'food-controller',
-            'message' => 'Food Controller Dashboard',
-            'user' => $request->user(),
+            'message' => 'F&B Controller dashboard fetched successfully.',
             'data' => [
-                'summary' => $summary,
+                'kpis' => [
+                    'pending_validation' => $pendingValidation,
+                    'validated_requests' => $validated,
+                    'validation_rejected' => $validationRejected,
+                    'approved_requests' => $approved,
+                    'received_requests' => $received,
+                    'pending_value' => round($pendingValue, 2),
+                    'monthly_validated_value' => round($monthlyValidatedValue, 2),
+                    'monthly_approved_value' => round($monthlyApprovedValue, 2),
+                    'today_validated' => $todayValidated,
+                    'week_rejected' => $weekRejected,
+                    'low_stock_items' => $lowStockCount,
+                    'out_of_stock_items' => $outOfStockCount,
+                    'recipe_integrity_issues' => $recipeIssueCount,
+                    'active_menu_items' => Schema::hasTable('menu_items') ? MenuItem::where('is_active', true)->count() : 0,
+                    'total_suppliers' => Schema::hasTable('suppliers') ? Supplier::count() : 0,
+                    'kitchen_pending' => $kitchenPending,
+                    'bar_pending' => $barPending,
+                ],
+                'status_distribution' => [
+                    ['label' => 'Submitted', 'status' => 'submitted', 'value' => $pendingValidation],
+                    ['label' => 'Validated', 'status' => 'food_validated', 'value' => $validated],
+                    ['label' => 'Approved', 'status' => 'approved', 'value' => $approved],
+                    ['label' => 'Received', 'status' => 'received', 'value' => $received],
+                    ['label' => 'Rejected', 'status' => 'validation_rejected', 'value' => $validationRejected],
+                ],
+                'workflow' => [
+                    ['label' => 'Submitted', 'value' => $pendingValidation],
+                    ['label' => 'F&B Validated', 'value' => $validated],
+                    ['label' => 'Manager Approved', 'value' => $approved],
+                    ['label' => 'Received', 'value' => $received],
+                ],
+                'trend' => $validationTrend,
+                'recent_validation_requests' => $recentValidationRequests,
                 'low_stock_items' => $lowStockItems,
                 'recent_inventory_transactions' => $recentTransactions,
-                'pending_purchase_orders' => $pendingPurchaseOrders,
+                'recipe_integrity' => [
+                    'menu_items_without_recipe' => 0,
+                    'recipes_without_ingredients' => 0,
+                    'recipes_with_missing_inventory_links' => 0,
+                    'direct_items_without_link' => $recipeIssueCount,
+                ],
+                'alerts' => [
+                    'pending_validation' => $pendingValidation,
+                    'validation_rejected' => $validationRejected,
+                    'low_stock_items' => $lowStockCount,
+                    'recipe_integrity_issues' => $recipeIssueCount,
+                    'kitchen_bar_pending' => $kitchenPending + $barPending,
+                ],
             ],
+            'meta' => null,
         ]);
+    }
+
+    private function purchaseSum(array $statuses, $fromDate = null): float
+    {
+        if (! Schema::hasTable('purchase_orders') || ! Schema::hasColumn('purchase_orders', 'total')) {
+            return 0;
+        }
+
+        return (float) PurchaseOrder::query()
+            ->whereIn('status', $statuses)
+            ->when($fromDate, fn ($query) => $query->where('updated_at', '>=', $fromDate))
+            ->sum('total');
+    }
+
+    private function buildTrend(): array
+    {
+        $rows = collect(range(6, 0))->mapWithKeys(function (int $daysAgo) {
+            $date = now()->subDays($daysAgo)->toDateString();
+
+            return [$date => [
+                'day' => Carbon::parse($date)->format('D'),
+                'date' => $date,
+                'submitted' => 0,
+                'validated' => 0,
+                'rejected' => 0,
+            ]];
+        });
+
+        if (! Schema::hasTable('purchase_orders')) {
+            return $rows->values()->all();
+        }
+
+        PurchaseOrder::selectRaw('DATE(created_at) as day, COUNT(*) as total')
+            ->where('created_at', '>=', now()->subDays(6)->startOfDay())
+            ->where('status', 'submitted')
+            ->groupByRaw('DATE(created_at)')
+            ->get()
+            ->each(function ($row) use ($rows) {
+                $key = (string) $row->day;
+                if ($rows->has($key)) {
+                    $item = $rows->get($key);
+                    $item['submitted'] = (int) $row->total;
+                    $rows->put($key, $item);
+                }
+            });
+
+        PurchaseOrder::selectRaw('DATE(updated_at) as day, status, COUNT(*) as total')
+            ->where('updated_at', '>=', now()->subDays(6)->startOfDay())
+            ->whereIn('status', ['food_validated', 'validation_rejected'])
+            ->groupByRaw('DATE(updated_at), status')
+            ->get()
+            ->each(function ($row) use ($rows) {
+                $key = (string) $row->day;
+                if (! $rows->has($key)) {
+                    return;
+                }
+
+                $item = $rows->get($key);
+                if ($row->status === 'food_validated') {
+                    $item['validated'] = (int) $row->total;
+                }
+                if ($row->status === 'validation_rejected') {
+                    $item['rejected'] = (int) $row->total;
+                }
+                $rows->put($key, $item);
+            });
+
+        return $rows->values()->all();
+    }
+
+    private function ticketCount(string $table): int
+    {
+        if (! Schema::hasTable($table) || ! Schema::hasColumn($table, 'status')) {
+            return 0;
+        }
+
+        return (int) DB::table($table)
+            ->whereIn('status', ['pending', 'confirmed', 'preparing', 'delayed'])
+            ->count();
+    }
+
+    private function recipeIssueCount(): int
+    {
+        if (! Schema::hasTable('menu_items')) {
+            return 0;
+        }
+
+        $count = 0;
+
+        if (Schema::hasColumn('menu_items', 'inventory_tracking_mode') && Schema::hasTable('recipes')) {
+            $count += DB::table('menu_items as mi')
+                ->leftJoin('recipes as r', 'r.menu_item_id', '=', 'mi.id')
+                ->where('mi.inventory_tracking_mode', 'recipe')
+                ->whereNull('r.id')
+                ->count();
+        }
+
+        if (Schema::hasColumn('menu_items', 'inventory_tracking_mode') && Schema::hasColumn('menu_items', 'direct_inventory_item_id')) {
+            $count += DB::table('menu_items')
+                ->where('inventory_tracking_mode', 'direct')
+                ->whereNull('direct_inventory_item_id')
+                ->count();
+        }
+
+        return (int) $count;
+    }
+
+    private function inventoryHas(string ...$columns): bool
+    {
+        if (! Schema::hasTable('inventory_items')) {
+            return false;
+        }
+
+        foreach ($columns as $column) {
+            if (! Schema::hasColumn('inventory_items', $column)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

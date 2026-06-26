@@ -25,8 +25,8 @@ class KitchenTicketController extends Controller
         return DB::transaction(function () use ($request, $id) {
             $ticket = KitchenTicket::lockForUpdate()->with('orderItem')->findOrFail($id);
 
-            if ($ticket->status !== 'pending') {
-                return response()->json(['success' => false, 'message' => 'Ticket not pending'], 422);
+            if (! in_array($ticket->status, ['pending', 'confirmed'], true)) {
+                return response()->json(['success' => false, 'message' => 'Ticket is not pending or confirmed'], 422);
             }
 
             $ticket->update([

@@ -1,95 +1,83 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
-        // Drop all tables first
         Schema::dropIfExists('model_has_permissions');
         Schema::dropIfExists('model_has_roles');
         Schema::dropIfExists('role_has_permissions');
         Schema::dropIfExists('roles');
         Schema::dropIfExists('permissions');
-        
-        // Set MySQL configuration for older versions
-        DB::statement('SET NAMES utf8');
-        DB::statement('SET FOREIGN_KEY_CHECKS=0');
-        
-        // Create permissions table with compatible charset
-        DB::statement("
-            CREATE TABLE `permissions` (
-                `id` bigint unsigned NOT NULL AUTO_INCREMENT,
-                `name` varchar(125) NOT NULL,
-                `guard_name` varchar(125) NOT NULL,
-                `created_at` timestamp NULL DEFAULT NULL,
-                `updated_at` timestamp NULL DEFAULT NULL,
-                PRIMARY KEY (`id`),
-                UNIQUE KEY `permissions_name_guard_name_unique` (`name`,`guard_name`)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci
-        ");
-        
-        // Create roles table
-        DB::statement("
-            CREATE TABLE `roles` (
-                `id` bigint unsigned NOT NULL AUTO_INCREMENT,
-                `name` varchar(125) NOT NULL,
-                `guard_name` varchar(125) NOT NULL,
-                `created_at` timestamp NULL DEFAULT NULL,
-                `updated_at` timestamp NULL DEFAULT NULL,
-                PRIMARY KEY (`id`),
-                UNIQUE KEY `roles_name_guard_name_unique` (`name`,`guard_name`)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci
-        ");
-        
-        // Create model_has_permissions table
-        DB::statement("
-            CREATE TABLE `model_has_permissions` (
-                `permission_id` bigint unsigned NOT NULL,
-                `model_type` varchar(191) NOT NULL,
-                `model_id` bigint unsigned NOT NULL,
-                PRIMARY KEY (`permission_id`,`model_id`,`model_type`),
-                KEY `model_has_permissions_model_id_model_type_index` (`model_id`,`model_type`),
-                CONSTRAINT `model_has_permissions_permission_id_foreign` FOREIGN KEY (`permission_id`) REFERENCES `permissions` (`id`) ON DELETE CASCADE
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci
-        ");
-        
-        // Create model_has_roles table
-        DB::statement("
-            CREATE TABLE `model_has_roles` (
-                `role_id` bigint unsigned NOT NULL,
-                `model_type` varchar(191) NOT NULL,
-                `model_id` bigint unsigned NOT NULL,
-                PRIMARY KEY (`role_id`,`model_id`,`model_type`),
-                KEY `model_has_roles_model_id_model_type_index` (`model_id`,`model_type`),
-                CONSTRAINT `model_has_roles_role_id_foreign` FOREIGN KEY (`role_id`) REFERENCES `roles` (`id`) ON DELETE CASCADE
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci
-        ");
-        
-        // Create role_has_permissions table
-        DB::statement("
-            CREATE TABLE `role_has_permissions` (
-                `permission_id` bigint unsigned NOT NULL,
-                `role_id` bigint unsigned NOT NULL,
-                PRIMARY KEY (`permission_id`,`role_id`),
-                KEY `role_has_permissions_role_id_foreign` (`role_id`),
-                CONSTRAINT `role_has_permissions_permission_id_foreign` FOREIGN KEY (`permission_id`) REFERENCES `permissions` (`id`) ON DELETE CASCADE,
-                CONSTRAINT `role_has_permissions_role_id_foreign` FOREIGN KEY (`role_id`) REFERENCES `roles` (`id`) ON DELETE CASCADE
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci
-        ");
-        
-        DB::statement('SET FOREIGN_KEY_CHECKS=1');
+
+        Schema::create('permissions', function (Blueprint $table) {
+            $table->bigIncrements('id');
+            $table->string('name', 125);
+            $table->string('guard_name', 125);
+            $table->timestamps();
+
+            $table->unique(['name', 'guard_name'], 'permissions_name_guard_name_unique');
+        });
+
+        Schema::create('roles', function (Blueprint $table) {
+            $table->bigIncrements('id');
+            $table->string('name', 125);
+            $table->string('guard_name', 125);
+            $table->timestamps();
+
+            $table->unique(['name', 'guard_name'], 'roles_name_guard_name_unique');
+        });
+
+        Schema::create('model_has_permissions', function (Blueprint $table) {
+            $table->unsignedBigInteger('permission_id');
+            $table->string('model_type', 191);
+            $table->unsignedBigInteger('model_id');
+
+            $table->primary(['permission_id', 'model_id', 'model_type'], 'model_has_permissions_permission_model_type_primary');
+            $table->index(['model_id', 'model_type'], 'model_has_permissions_model_id_model_type_index');
+
+            $table->foreign('permission_id')
+                ->references('id')
+                ->on('permissions')
+                ->cascadeOnDelete();
+        });
+
+        Schema::create('model_has_roles', function (Blueprint $table) {
+            $table->unsignedBigInteger('role_id');
+            $table->string('model_type', 191);
+            $table->unsignedBigInteger('model_id');
+
+            $table->primary(['role_id', 'model_id', 'model_type'], 'model_has_roles_role_model_type_primary');
+            $table->index(['model_id', 'model_type'], 'model_has_roles_model_id_model_type_index');
+
+            $table->foreign('role_id')
+                ->references('id')
+                ->on('roles')
+                ->cascadeOnDelete();
+        });
+
+        Schema::create('role_has_permissions', function (Blueprint $table) {
+            $table->unsignedBigInteger('permission_id');
+            $table->unsignedBigInteger('role_id');
+
+            $table->primary(['permission_id', 'role_id'], 'role_has_permissions_permission_id_role_id_primary');
+
+            $table->foreign('permission_id')
+                ->references('id')
+                ->on('permissions')
+                ->cascadeOnDelete();
+
+            $table->foreign('role_id')
+                ->references('id')
+                ->on('roles')
+                ->cascadeOnDelete();
+        });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('model_has_permissions');

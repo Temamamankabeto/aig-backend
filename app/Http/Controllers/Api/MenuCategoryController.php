@@ -13,50 +13,47 @@ class MenuCategoryController extends Controller
     public function index(Request $request)
     {
         $this->authorize('viewAny', MenuCategory::class);
-
+    
         $search = trim((string) $request->query('search', ''));
-        $type = $request->query('type');
         $active = $request->query('active');
-        $perPage = max(5, min((int) $request->query('per_page', 10), 100));
-
-        $q = MenuCategory::query()
+        $perPage = max(1, min((int) $request->query('per_page', 10), 100));
+    
+        $query = MenuCategory::query()
             ->orderBy('sort_order')
             ->orderBy('name');
-
+    
         if ($search !== '') {
-            $q->where('name', 'like', "%{$search}%");
+            $query->where('name', 'like', "%{$search}%");
         }
-
-        if (in_array($type, ['food', 'drink'], true)) {
-            $q->where('type', $type);
-        }
-
+    
+    
         if ($active === '1' || $active === '0') {
-            $q->where('is_active', $active === '1');
+            $query->where('is_active', $active === '1');
         }
-
-        $page = $q->paginate($perPage);
-
+    
+        $categories = $query->paginate($perPage);
+    
         return response()->json([
             'success' => true,
-            'data' => $page->items(),
+            'message' => 'Menu categories retrieved successfully',
+            'data' => collect($categories->items())->map(function ($category) {
+                return [
+                    'id' => $category->id,
+                    'name' => $category->name,
+                    'description' => $category->description,
+                    'sort_order' => $category->sort_order,
+                    'is_active' => (bool) $category->is_active,
+                    'status' => $category->is_active ? 'active' : 'inactive',
+                    'created_at' => $category->created_at,
+                    'updated_at' => $category->updated_at,
+                ];
+            }),
             'meta' => [
-                'current_page' => $page->currentPage(),
-                'last_page' => $page->lastPage(),
-                'per_page' => $page->perPage(),
-                'total' => $page->total(),
+                'current_page' => $categories->currentPage(),
+                'per_page' => $categories->perPage(),
+                'total' => $categories->total(),
+                'last_page' => $categories->lastPage(),
             ],
-        ]);
-    }
-
-    public function show($id)
-    {
-        $cat = MenuCategory::findOrFail($id);
-        $this->authorize('view', $cat);
-
-        return response()->json([
-            'success' => true,
-            'data' => $cat,
         ]);
     }
 
@@ -68,7 +65,9 @@ class MenuCategoryController extends Controller
 
         $cat = MenuCategory::create([
             'name' => $data['name'],
-            'type' => $data['type'],
+            // Legacy column kept only for DB compatibility. Category is organizational only.
+            'type' => 'food',
+            'description' => $data['description'] ?? null,
             'icon' => $data['icon'] ?? null,
             'sort_order' => $data['sort_order'] ?? 0,
             'is_active' => $data['is_active'] ?? true,
@@ -90,7 +89,7 @@ class MenuCategoryController extends Controller
 
         $cat->update([
             'name' => $data['name'],
-            'type' => $data['type'],
+            'description' => $data['description'] ?? null,
             'icon' => $data['icon'] ?? null,
             'sort_order' => $data['sort_order'] ?? 0,
             'is_active' => $data['is_active'] ?? $cat->is_active,
@@ -133,20 +132,16 @@ class MenuCategoryController extends Controller
 
     public function publicIndex(Request $request)
     {
-        $type = $request->query('type');
 
         $q = MenuCategory::query()
             ->where('is_active', true)
             ->orderBy('sort_order')
             ->orderBy('name');
 
-        if (in_array($type, ['food', 'drink'], true)) {
-            $q->where('type', $type);
-        }
 
         return response()->json([
             'success' => true,
-            'data' => $q->get(['id', 'name', 'type', 'icon', 'sort_order', 'is_active']),
+            'data' => $q->get(['id', 'name', 'description', 'icon', 'sort_order', 'is_active']),
         ]);
     }
 }

@@ -3,63 +3,37 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\User\AssignUserRoleRequest;
+use App\Http\Requests\User\IndexUserRequest;
+use App\Http\Requests\User\ResetUserPasswordRequest;
+use App\Http\Requests\User\StoreUserRequest;
+use App\Http\Requests\User\UpdateProfileRequest;
+use App\Http\Requests\User\UpdateUserRequest;
 use App\Models\User;
+use App\Services\UserService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
-use Spatie\Permission\Models\Role;
-use Spatie\Permission\Traits\HasRoles;
 
 class UserController extends Controller
 {
-    public function index(Request $request)
+    public function __construct(
+        protected UserService $userService
+    ) {}
+
+    public function index(IndexUserRequest $request): JsonResponse
     {
         $this->authorize('viewAny', User::class);
 
-        $perPage = max(1, (int) $request->get('per_page', 10));
+        $users = $this->userService->paginateUsers($request->validated());
 
-        $query = User::query()->with('roles');
-
-        if ($request->filled('search')) {
-            $search = trim((string) $request->search);
-
-            $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('email', 'like', "%{$search}%");
-            });
-        }
-
-        if ($request->filled('status')) {
-            if ($request->status === 'active') {
-                $query->where('is_active', true);
-            }
-
-            if ($request->status === 'disabled') {
-                $query->where('is_active', false);
-            }
-        }
-
-        $users = $query
-            ->latest()
-            ->paginate($perPage);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Users retrieved successfully',
-            'data' => $users->items(),
-            'meta' => [
-                'current_page' => $users->currentPage(),
-                'per_page' => $users->perPage(),
-                'total' => $users->total(),
-                'last_page' => $users->lastPage(),
-                'from' => $users->firstItem(),
-                'to' => $users->lastItem(),
-            ],
-        ]);
+        return response()->json(
+            $this->userService->transformPaginatedUsers($users)
+        );
     }
 
-    public function show($id)
+    public function show(int|string $id): JsonResponse
     {
-        $user = User::with('roles')->findOrFail($id);
+        $user = $this->userService->getUser($id);
         $this->authorize('view', $user);
 
         return response()->json([
@@ -69,50 +43,23 @@ class UserController extends Controller
         ]);
     }
 
-    public function rolesLite()
+    public function rolesLite(): JsonResponse
     {
         $this->authorize('rolesLite', User::class);
-    
-        $roles = Role::query()
-            ->where('guard_name', 'sanctum')
-            ->select('id', 'name')
-            ->orderBy('name')
-            ->get();
-    
+
         return response()->json([
             'success' => true,
             'message' => 'Roles retrieved successfully',
-            'data' => $roles,
+            'data' => $this->userService->getRolesLite(),
         ]);
     }
 
-    public function store(Request $request)
+    public function store(StoreUserRequest $request): JsonResponse
     {
         $this->authorize('create', User::class);
-    
-        $validated = $request->validate([
-            'name' => 'required|string|max:100',
-            'email' => 'required|email|unique:users,email',
-            'phone' => 'required|string|max:20|unique:users,phone',
-            'password' => 'required|string|min:6',
-            'role' => 'required|string|exists:roles,name',
-        ]);
-    
-        $role = Role::where('name', $validated['role'])
-            ->where('guard_name', 'sanctum')
-            ->firstOrFail();
-    
-        $user = User::create([
-            'name' => $validated['name'],
-            'email' => $validated['email'],
-            'phone' => $validated['phone'],
-            'password' => Hash::make($validated['password']),
-            'is_active' => true,
-        ]);
-    
-        $user->syncRoles([$role->name]);
-        $user->load('roles');
-    
+
+        $user = $this->userService->createUser($request->validated());
+
         return response()->json([
             'success' => true,
             'message' => 'User created successfully',
@@ -120,86 +67,54 @@ class UserController extends Controller
         ], 201);
     }
 
-    public function update(Request $request, $id)
+    public function update(UpdateUserRequest $request, int|string $id): JsonResponse
     {
-        $user = User::findOrFail($id);
+        $user = $this->userService->getUser($id);
         $this->authorize('update', $user);
-    
-        $validated = $request->validate([
-            'name' => 'required|string|max:100',
-            'email' => "required|email|unique:users,email,{$id}",
-            'role' => 'required|string|exists:roles,name',
-        ]);
-    
-        $role = Role::where('name', $validated['role'])
-            ->where('guard_name', 'sanctum')
-            ->firstOrFail();
-    
-        $user->update([
-            'name' => $validated['name'],
-            'email' => $validated['email'],
-        ]);
-    
-        $user->syncRoles([$role->name]);
-        $user->load('roles');
-    
+
+        $updatedUser = $this->userService->updateUser($user, $request->validated());
+
         return response()->json([
             'success' => true,
             'message' => 'User updated successfully',
-            'data' => $user,
+            'data' => $updatedUser,
         ]);
     }
 
-    public function assignRole(Request $request, $id)
+    public function assignRole(AssignUserRoleRequest $request, int|string $id): JsonResponse
     {
-        $user = User::findOrFail($id);
+        $user = $this->userService->getUser($id);
         $this->authorize('assignRole', $user);
-    
-        $validated = $request->validate([
-            'role' => 'required|string|exists:roles,name',
-        ]);
-    
-        $role = Role::where('name', $validated['role'])
-            ->where('guard_name', 'sanctum')
-            ->firstOrFail();
-    
-        $user->syncRoles([$role->name]);
-        $user->load('roles');
-    
+
+        $updatedUser = $this->userService->assignRole($user, $request->validated()['role']);
+
         return response()->json([
             'success' => true,
             'message' => 'Role updated successfully',
-            'data' => $user,
+            'data' => $updatedUser,
         ]);
     }
 
-    public function toggle($id)
+    public function toggle(int|string $id): JsonResponse
     {
-        $user = User::findOrFail($id);
+        $user = $this->userService->getUser($id);
         $this->authorize('toggle', $user);
 
-        $user->is_active = !$user->is_active;
-        $user->save();
-        $user->load('roles');
+        $updatedUser = $this->userService->toggleUser($user);
 
         return response()->json([
             'success' => true,
             'message' => 'User status updated successfully',
-            'data' => $user,
+            'data' => $updatedUser,
         ]);
     }
 
-    public function resetPassword(Request $request, $id)
+    public function resetPassword(ResetUserPasswordRequest $request, int|string $id): JsonResponse
     {
-        $user = User::findOrFail($id);
+        $user = $this->userService->getUser($id);
         $this->authorize('resetPassword', $user);
 
-        $validated = $request->validate([
-            'new_password' => 'required|string|min:6',
-        ]);
-
-        $user->password = Hash::make($validated['new_password']);
-        $user->save();
+        $this->userService->resetPassword($user, $request->validated()['new_password']);
 
         return response()->json([
             'success' => true,
@@ -210,90 +125,43 @@ class UserController extends Controller
         ]);
     }
 
-    public function waitersLite(Request $request)
+    public function waitersLite(Request $request): JsonResponse
     {
-        $search = trim((string) $request->get('search', ''));
-    
-        $query = \App\Models\User::query()
-            ->select('id', 'name')
-            ->whereHas('roles', function ($q) {
-                $q->where('name', 'Waiter');
-            });
-    
-        if ($search !== '') {
-            $query->where('name', 'like', "%{$search}%");
-        }
-    
-        $waiters = $query
-            ->orderBy('name')
-            ->get();
-    
+        $this->authorize('waitersLite', User::class);
+
         return response()->json([
             'success' => true,
-            'data' => $waiters,
+            'data' => $this->userService->getWaitersLite($request->get('search')),
         ]);
     }
-   
 
-    public function updateProfile(Request $request)
-{
-    $user = $request->user();
+    public function updateProfile(UpdateProfileRequest $request): JsonResponse
+    {
+        $user = $request->user();
 
-    $validated = $request->validate([
-        'name' => 'required|string|max:100',
-        'email' => 'required|email|unique:users,email,' . $user->id,
-        'phone' => 'required|string|max:20|unique:users,phone,' . $user->id,
-        'old_password' => 'nullable|string',
-        'new_password' => 'nullable|string|min:6',
-        'profile' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
-    ]);
+        $updatedUser = $this->userService->updateProfile(
+            $user,
+            $request->validated(),
+            $request->file('profile')
+        );
 
-    $user->name = $validated['name'];
-    $user->email = $validated['email'];
-    $user->phone = $validated['phone'];
-
-    if (!empty($validated['new_password'])) {
-        if (empty($validated['old_password'])) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Old password is required to change password',
-                'errors' => [
-                    'old_password' => ['Old password is required when setting a new password.']
-                ]
-            ], 422);
-        }
-
-        if (!Hash::check($validated['old_password'], $user->password)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Old password is incorrect',
-                'errors' => [
-                    'old_password' => ['The provided old password is incorrect.']
-                ]
-            ], 422);
-        }
-
-        $user->password = Hash::make($validated['new_password']);
+        return response()->json([
+            'success' => true,
+            'message' => 'Profile updated successfully',
+            'data' => $updatedUser,
+        ]);
     }
 
-    if ($request->hasFile('profile')) {
-        if ($user->profile_image && \Storage::disk('public')->exists($user->profile_image)) {
-            \Storage::disk('public')->delete($user->profile_image);
-        }
+    public function destroy(int|string $id): JsonResponse
+    {
+        $user = $this->userService->getUser($id);
+        $this->authorize('delete', $user);
 
-        $path = $request->file('profile')->store('users/profile-images', 'public');
-        $user->profile_image = $path;
+        $this->userService->deleteUser($user, auth()->id());
+
+        return response()->json([
+            'success' => true,
+            'message' => 'User deleted successfully',
+        ]);
     }
-
-    $user->save();
-    $user->load('roles');
-
-    return response()->json([
-        'success' => true,
-        'message' => 'Profile updated successfully',
-        'data' => $user,
-    ]);
-}
-
-    
 }

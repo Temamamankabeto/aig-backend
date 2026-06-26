@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Recipe;
 use App\Models\RecipeItem;
+use App\Models\InventoryItem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -38,14 +39,18 @@ class RecipeController extends Controller
             'note' => 'nullable|string|max:2000',
             'items' => 'required|array|min:1',
             'items.*.inventory_item_id' => 'required|exists:inventory_items,id',
-            'items.*.quantity' => 'required|numeric|min:0.0001',
-            'items.*.unit' => 'required|string|max:50',
+            'items.*.quantity' => 'required|numeric|min:0.001',
         ]);
 
         return DB::transaction(function () use ($data) {
             $recipe = Recipe::create(['menu_item_id' => $data['menu_item_id'], 'note' => $data['note'] ?? null]);
             foreach ($data['items'] as $it) {
-                RecipeItem::create(['recipe_id' => $recipe->id, 'inventory_item_id' => $it['inventory_item_id'], 'quantity' => (float) $it['quantity'], 'unit' => $it['unit']]);
+                RecipeItem::create([
+                    'recipe_id' => $recipe->id,
+                    'inventory_item_id' => $it['inventory_item_id'],
+                    'quantity' => (float) $it['quantity'],
+                    'base_unit' => InventoryItem::find($it['inventory_item_id'])?->base_unit ?? 'pcs',
+                ]);
             }
             return response()->json(['success' => true, 'data' => $recipe->load('items.inventoryItem')], 201);
         });
@@ -60,7 +65,6 @@ class RecipeController extends Controller
             'items' => 'nullable|array|min:1',
             'items.*.inventory_item_id' => 'required_with:items|exists:inventory_items,id',
             'items.*.quantity' => 'required_with:items|numeric|min:0.0001',
-            'items.*.unit' => 'required_with:items|string|max:50',
         ]);
 
         return DB::transaction(function () use ($recipe, $data) {
@@ -72,7 +76,12 @@ class RecipeController extends Controller
             if (!empty($data['items'])) {
                 RecipeItem::where('recipe_id', $recipe->id)->delete();
                 foreach ($data['items'] as $it) {
-                    RecipeItem::create(['recipe_id' => $recipe->id, 'inventory_item_id' => $it['inventory_item_id'], 'quantity' => (float) $it['quantity'], 'unit' => $it['unit']]);
+                    RecipeItem::create([
+                        'recipe_id' => $recipe->id,
+                        'inventory_item_id' => $it['inventory_item_id'],
+                        'quantity' => (float) $it['quantity'],
+                        'base_unit' => InventoryItem::find($it['inventory_item_id'])?->base_unit ?? 'pcs',
+                    ]);
                 }
             }
             return response()->json(['success' => true, 'data' => $recipe->fresh()->load('items.inventoryItem')]);

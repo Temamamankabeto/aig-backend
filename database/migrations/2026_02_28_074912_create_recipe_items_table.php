@@ -15,7 +15,7 @@ return new class extends Migration {
 
             // how much raw material is used per 1 menu item
             $table->decimal('quantity', 12, 3);
-            $table->string('unit')->default('pcs');
+            $table->enum('base_unit', ['g', 'ml', 'pc'])->default('pc');
 
             $table->timestamps();
 

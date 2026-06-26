@@ -12,8 +12,9 @@ use Illuminate\Support\Facades\DB;
 
 class InventoryTransactionController extends Controller
 {
-    public function __construct(private AuditLogger $auditLogger)
-    {
+    public function __construct(
+        private AuditLogger $auditLogger,
+    ) {
     }
 
     public function index(Request $request)
@@ -22,6 +23,7 @@ class InventoryTransactionController extends Controller
         $q = InventoryTransaction::query()->with('inventoryItem')->orderBy('id', 'desc');
 
         if ($request->filled('type')) $q->where('type', $request->type);
+        if ($request->filled('reference_type')) $q->where('reference_type', $request->reference_type);
         if ($request->filled('inventory_item_id')) $q->where('inventory_item_id', $request->inventory_item_id);
 
         return response()->json(['success' => true, 'data' => $q->paginate((int) ($request->get('per_page', 30)))]);
@@ -30,10 +32,14 @@ class InventoryTransactionController extends Controller
     public function adjust(Request $request, $itemId)
     {
         $this->authorize('adjust', InventoryTransaction::class);
-        $data = $request->validate(['quantity' => 'required|numeric', 'reason' => 'required|string|max:255']);
+        $data = $request->validate([
+            'quantity' => 'required|numeric',
+            'reason' => 'required|string|max:255',
+            'expiry_date' => 'nullable|date',
+        ]);
 
         return DB::transaction(function () use ($request, $itemId, $data) {
-            $item = InventoryItem::lockForUpdate()->findOrFail($itemId);
+            $item = InventoryItem::query()->lockForUpdate()->findOrFail($itemId);
             $before = $item->toArray();
             $beforeQty = round((float) $item->current_stock, 3);
             $changeQty = round((float) $data['quantity'], 3);
@@ -51,7 +57,7 @@ class InventoryTransactionController extends Controller
                     'purchase_price' => (float) ($item->average_purchase_price ?? 0),
                     'initial_qty' => $changeQty,
                     'remaining_qty' => $changeQty,
-                    'expiry_date' => null,
+                    'expiry_date' => $data['expiry_date'] ?? null,
                 ]);
             } elseif ($changeQty < 0) {
                 $remaining = abs($changeQty);
@@ -82,7 +88,7 @@ class InventoryTransactionController extends Controller
                 'after_quantity' => $newQty,
                 'reference_type' => 'manual',
                 'reference_id' => null,
-                'note' => $data['reason'],
+                'note' => trim($data['reason'] . ' [' . $data['quantity'] . ' ' . $item->base_unit . ']'), 
                 'created_by' => $request->user()->id,
             ]);
 
@@ -96,10 +102,13 @@ class InventoryTransactionController extends Controller
     public function waste(Request $request, $itemId)
     {
         $this->authorize('waste', InventoryTransaction::class);
-        $data = $request->validate(['quantity' => 'required|numeric|min:0.001', 'reason' => 'required|string|max:255']);
+        $data = $request->validate([
+            'quantity' => 'required|numeric|min:0.001',
+            'reason' => 'required|string|max:255',
+        ]);
 
         return DB::transaction(function () use ($request, $itemId, $data) {
-            $item = InventoryItem::lockForUpdate()->findOrFail($itemId);
+            $item = InventoryItem::query()->lockForUpdate()->findOrFail($itemId);
             $before = $item->toArray();
             $beforeQty = round((float) $item->current_stock, 3);
             $qty = round((float) $data['quantity'], 3);
@@ -137,7 +146,7 @@ class InventoryTransactionController extends Controller
                 'after_quantity' => (float) $item->current_stock,
                 'reference_type' => 'waste',
                 'reference_id' => null,
-                'note' => $data['reason'],
+                'note' => trim($data['reason'] . ' [' . $data['quantity'] . ' ' . $item->base_unit . ']'), 
                 'created_by' => $request->user()->id,
             ]);
 
@@ -147,4 +156,74 @@ class InventoryTransactionController extends Controller
             return response()->json(['success' => true, 'data' => ['item' => $item->fresh(), 'tx' => $tx]]);
         });
     }
+
+
+    public function transfer(Request $request, $itemId)
+    {
+        $this->authorize('adjust', InventoryTransaction::class);
+        $data = $request->validate([
+            'to_item_id' => 'required|different:itemId|exists:inventory_items,id',
+            'quantity' => 'required|numeric|min:0.001',
+            'reason' => 'required|string|max:255',
+        ]);
+
+        return DB::transaction(function () use ($request, $itemId, $data) {
+            $fromItem = InventoryItem::query()->lockForUpdate()->findOrFail($itemId);
+            $toItem = InventoryItem::query()->lockForUpdate()->findOrFail($data['to_item_id']);
+
+            $qtyFrom = round((float) $data['quantity'], 3);
+            $qtyTo = $qtyFrom;
+
+            $fromBefore = round((float) $fromItem->current_stock, 3);
+            if ($fromBefore < $qtyFrom) {
+                return response()->json(['success' => false, 'message' => 'Insufficient stock for transfer'], 422);
+            }
+
+            $toBefore = round((float) $toItem->current_stock, 3);
+            $fromAfter = round($fromBefore - $qtyFrom, 3);
+            $toAfter = round($toBefore + $qtyTo, 3);
+
+            $fromItem->current_stock = $fromAfter;
+            $fromItem->save();
+
+            $toItem->current_stock = $toAfter;
+            $toItem->save();
+
+            $referenceId = (string) now()->timestamp . random_int(100, 999);
+            $note = trim($data['reason'] . ' [' . $data['quantity'] . ' ' . $fromItem->base_unit . ']');
+
+            $outTx = InventoryTransaction::create([
+                'inventory_item_id' => $fromItem->id,
+                'type' => 'transfer_out',
+                'quantity' => $qtyFrom,
+                'unit_cost' => $fromItem->average_purchase_price,
+                'before_quantity' => $fromBefore,
+                'after_quantity' => $fromAfter,
+                'reference_type' => 'transfer',
+                'reference_id' => $referenceId,
+                'note' => $note . ' -> ' . $toItem->name,
+                'created_by' => $request->user()->id,
+            ]);
+
+            $inTx = InventoryTransaction::create([
+                'inventory_item_id' => $toItem->id,
+                'type' => 'transfer_in',
+                'quantity' => $qtyTo,
+                'unit_cost' => $toItem->average_purchase_price,
+                'before_quantity' => $toBefore,
+                'after_quantity' => $toAfter,
+                'reference_type' => 'transfer',
+                'reference_id' => $referenceId,
+                'note' => $note . ' <- ' . $fromItem->name,
+                'created_by' => $request->user()->id,
+            ]);
+
+            return response()->json(['success' => true, 'data' => [
+                'from_item' => $fromItem->fresh(),
+                'to_item' => $toItem->fresh(),
+                'transactions' => [$outTx, $inTx],
+            ]]);
+        });
+    }
+
 }

@@ -56,18 +56,26 @@ Route::middleware(['auth:sanctum'])->prefix('food-controller')->group(function (
     Route::get('/inventory/transactions', [InventoryTransactionController::class, 'index']);
     Route::post('/inventory/items/{id}/adjust', [InventoryTransactionController::class, 'adjust']);
     Route::post('/inventory/items/{id}/waste', [InventoryTransactionController::class, 'waste']);
+    Route::post('/inventory/items/{id}/transfer', [InventoryTransactionController::class, 'transfer']);
 
     Route::get('/suppliers', [SupplierController::class, 'index']);
     Route::get('/suppliers/{id}', [SupplierController::class, 'show']);
+    Route::get('/suppliers/{id}/performance', [SupplierController::class, 'performance']);
     Route::post('/suppliers', [SupplierController::class, 'store']);
     Route::put('/suppliers/{id}', [SupplierController::class, 'update']);
     Route::patch('/suppliers/{id}', [SupplierController::class, 'update']);
 
     Route::get('/purchase-orders', [PurchaseOrderController::class, 'index']);
     Route::get('/purchase-orders/{id}', [PurchaseOrderController::class, 'show']);
+    Route::get('/purchase-orders/{id}/history', [PurchaseOrderController::class, 'history']);
     Route::post('/purchase-orders', [PurchaseOrderController::class, 'store']);
+    Route::post('/purchase-orders/{id}/submit', [PurchaseOrderController::class, 'submit']);
+    Route::post('/purchase-orders/{id}/validate', [PurchaseOrderController::class, 'validateOrder']);
+    Route::post('/purchase-orders/{id}/reject-validation', [PurchaseOrderController::class, 'rejectValidation']);
     Route::post('/purchase-orders/{id}/approve', [PurchaseOrderController::class, 'approve']);
     Route::post('/purchase-orders/{id}/cancel', [PurchaseOrderController::class, 'cancel']);
+    Route::get('/stock-receivings', [StockReceivingController::class, 'index']);
+    Route::get('/stock-receivings/{id}', [StockReceivingController::class, 'show']);
     Route::post('/purchase-orders/{id}/receive', [StockReceivingController::class, 'receive']);
 
     Route::get('/recipes', [RecipeController::class, 'index']);
@@ -81,5 +89,8 @@ Route::middleware(['auth:sanctum'])->prefix('food-controller')->group(function (
     Route::get('/reports/low-stock', [InventoryReportController::class, 'lowStock']);
     Route::get('/reports/reorder-suggestions', [InventoryReportController::class, 'reorderSuggestions']);
     Route::get('/reports/recipe-integrity', [InventoryReportController::class, 'recipeIntegrity']);
+    Route::get('/reports/stock-status-summary', [InventoryReportController::class, 'stockStatusSummary']);
+    Route::get('/reports/expired-items', [InventoryReportController::class, 'expiredItems']);
+    Route::get('/reports/receiving-history', [InventoryReportController::class, 'receivingHistory']);
     Route::get('/reports/stock-valuation', [InventoryReportController::class, 'stockValuation']);
 });

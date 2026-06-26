@@ -3,75 +3,48 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
-use Spatie\Permission\Models\Role;
+use App\Http\Requests\Role\AssignRolePermissionsRequest;
+use App\Http\Requests\Role\IndexPermissionRequest;
+use App\Http\Requests\Role\IndexRoleRequest;
+use App\Http\Requests\Role\StoreRoleRequest;
+use App\Http\Requests\Role\UpdateRoleRequest;
+use App\Services\RoleService;
+use Illuminate\Http\JsonResponse;
 use Spatie\Permission\Models\Permission;
-use Spatie\Permission\PermissionRegistrar;
+use Spatie\Permission\Models\Role;
 
 class RoleController extends Controller
 {
-    protected string $guard = 'sanctum';
+    public function __construct(
+        protected RoleService $roleService
+    ) {}
 
-    public function index(Request $request)
+    public function index(IndexRoleRequest $request): JsonResponse
     {
         $this->authorize('viewAny', Role::class);
-        $search = trim((string) $request->query('search', ''));
 
-        $query = Role::query()
-            ->where('guard_name', $this->guard)
-            ->orderBy('name');
+        $roles = $this->roleService->paginateRoles($request->validated());
 
-        if ($search !== '') {
-            $query->where('name', 'like', "%{$search}%");
-        }
-
-        $roles = $query->get(['id', 'name', 'guard_name', 'created_at', 'updated_at']);
-
-        return response()->json([
-            'success' => true,
-            'data' => $roles,
-        ]);
+        return response()->json(
+            $this->roleService->transformPaginatedRoles($roles)
+        );
     }
 
-    public function permissions(Request $request)
+    public function permissions(IndexPermissionRequest $request): JsonResponse
     {
         $this->authorize('viewAny', Permission::class);
-        $query = Permission::query()
-            ->where('guard_name', $this->guard)
-            ->orderBy('name');
-
-        if ($request->filled('search')) {
-            $search = trim((string) $request->query('search'));
-            $query->where('name', 'like', "%{$search}%");
-        }
-
-        $permissions = $query->get(['id', 'name', 'guard_name']);
 
         return response()->json([
             'success' => true,
-            'data' => $permissions,
+            'data' => $this->roleService->getPermissions($request->validated()['search'] ?? null),
         ]);
     }
 
-    public function store(Request $request)
+    public function store(StoreRoleRequest $request): JsonResponse
     {
         $this->authorize('create', Role::class);
-        $data = $request->validate([
-            'name' => [
-                'required',
-                'string',
-                'max:100',
-                Rule::unique('roles', 'name')->where(fn ($q) => $q->where('guard_name', $this->guard)),
-            ],
-        ]);
 
-        $role = Role::create([
-            'name' => $data['name'],
-            'guard_name' => $this->guard,
-        ]);
-
-        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $role = $this->roleService->createRole($request->validated());
 
         return response()->json([
             'success' => true,
@@ -80,84 +53,45 @@ class RoleController extends Controller
         ], 201);
     }
 
-    public function update(Request $request, $id)
+    public function update(UpdateRoleRequest $request, int|string $id): JsonResponse
     {
-        $role = Role::where('guard_name', $this->guard)->findOrFail($id);
+        $role = $this->roleService->getRole($id);
         $this->authorize('update', $role);
 
-        $data = $request->validate([
-            'name' => [
-                'required',
-                'string',
-                'max:100',
-                Rule::unique('roles', 'name')
-                    ->ignore($role->id)
-                    ->where(fn ($q) => $q->where('guard_name', $this->guard)),
-            ],
-        ]);
-
-        $role->update([
-            'name' => $data['name'],
-        ]);
-
-        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $updatedRole = $this->roleService->updateRole($role, $request->validated());
 
         return response()->json([
             'success' => true,
             'message' => 'Role updated',
-            'data' => $role,
+            'data' => $updatedRole,
         ]);
     }
 
-    public function rolePermissions($id)
+    public function rolePermissions(int|string $id): JsonResponse
     {
-        $role = Role::where('guard_name', $this->guard)->findOrFail($id);
+        $role = $this->roleService->getRole($id);
         $this->authorize('view', $role);
-
-        $permissions = $role->permissions()
-            ->where('guard_name', $this->guard)
-            ->orderBy('name')
-            ->get(['id', 'name', 'guard_name']);
 
         return response()->json([
             'success' => true,
-            'data' => $permissions,
+            'data' => $this->roleService->getRolePermissions($role),
         ]);
     }
 
-    public function assignPermissions(Request $request, $id)
+    public function assignPermissions(AssignRolePermissionsRequest $request, int|string $id): JsonResponse
     {
-        $role = Role::where('guard_name', $this->guard)->findOrFail($id);
-        $this->authorize('update', $role);
+        $role = $this->roleService->getRole($id);
+        $this->authorize('assignPermissions', $role);
 
-        $data = $request->validate([
-            'permissions' => ['nullable', 'array'],
-            'permissions.*' => ['string'],
-        ]);
-
-        $permNames = collect($data['permissions'] ?? [])
-            ->map(fn ($name) => trim((string) $name))
-            ->filter()
-            ->values()
-            ->all();
-
-        $existingPermissions = Permission::query()
-            ->where('guard_name', $this->guard)
-            ->whereIn('name', $permNames)
-            ->get();
-
-        $role->syncPermissions($existingPermissions);
-
-        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $result = $this->roleService->assignPermissions(
+            $role,
+            $request->validated()['permissions'] ?? []
+        );
 
         return response()->json([
             'success' => true,
             'message' => 'Permissions updated',
-            'data' => [
-                'role_id' => $role->id,
-                'assigned_count' => $existingPermissions->count(),
-                'permissions' => $existingPermissions->pluck('name')->values(),
-            ],
+            'data' => $result,
         ]);
     }
 }

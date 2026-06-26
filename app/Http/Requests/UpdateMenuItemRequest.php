@@ -27,8 +27,14 @@ class UpdateMenuItemRequest extends FormRequest
             }
         }
 
-        if ($this->has('inventory_tracking_mode') && $this->input('inventory_tracking_mode') === '') {
-            $merged['inventory_tracking_mode'] = null;
+        if ($this->has('inventory_tracking_mode')) {
+            $mode = $this->input('inventory_tracking_mode');
+
+            if ($mode === '') {
+                $merged['inventory_tracking_mode'] = null;
+            } elseif ($mode !== 'direct') {
+                $merged['direct_inventory_item_id'] = null;
+            }
         }
 
         if ($this->has('direct_inventory_item_id')) {
@@ -84,23 +90,23 @@ class UpdateMenuItemRequest extends FormRequest
             'description' => ['sometimes', 'nullable', 'string'],
             'type' => ['sometimes', 'required', Rule::in(['food', 'drink'])],
             'price' => ['sometimes', 'required', 'numeric', 'min:0'],
-            'image' => ['sometimes', 'nullable', 'image', 'mimes:jpg,jpeg,png,webp,gif', 'max:4096'],
+            'image' => ['sometimes', 'nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
             'is_available' => ['sometimes', 'nullable', 'boolean'],
             'is_active' => ['sometimes', 'nullable', 'boolean'],
             'is_featured' => ['sometimes', 'nullable', 'boolean'],
             'has_ingredients' => ['sometimes', 'nullable', 'boolean'],
-            'inventory_tracking_mode' => ['sometimes', 'nullable', Rule::in(['recipe', 'direct', 'none'])],
-            'direct_inventory_item_id' => ['sometimes', 'nullable', 'integer', 'exists:inventory_items,id'],
+            'inventory_tracking_mode' => ['sometimes', 'required', Rule::in(['recipe', 'direct', 'none'])],
+            'direct_inventory_item_id' => [
+                'nullable',
+                'integer',
+                'required_if:inventory_tracking_mode,direct',
+                'exists:inventory_items,id',
+            ],
             'menu_mode' => ['sometimes', 'nullable', Rule::in(['normal', 'spatial'])],
             'modifiers' => ['sometimes', 'nullable'],
             'prep_minutes' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'remove_image' => ['sometimes', 'nullable', 'boolean'],
         ];
-    }
-
-    public function validationData(): array
-    {
-        return $this->all();
     }
 
     private function normalizeBoolean($value): ?bool

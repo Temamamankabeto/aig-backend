@@ -8,8 +8,11 @@ use Illuminate\Validation\Rule;
 class SetTableStatusRequest extends FormRequest
 {
     public function authorize(): bool { return (bool) $this->user()?->can('tables.update'); }
+
     public function rules(): array
     {
-        return ['status' => ['required', Rule::in(['available','occupied','reserved','cleaning'])]];
+        return [
+            'status' => ['required', Rule::in(['available', 'occupied', 'reserved', 'cleaning', 'out_of_service'])],
+        ];
     }
 }

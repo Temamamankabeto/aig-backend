@@ -2,8 +2,8 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
 
 class StockReceiving extends Model
 {
@@ -12,7 +12,7 @@ class StockReceiving extends Model
     protected $fillable = [
         'purchase_order_id', 'status',
         'received_by', 'approved_by',
-        'note', 'received_at', 'approved_at',
+        'note', 'delivery_note_path', 'received_at', 'approved_at',
     ];
 
     protected $casts = [
@@ -33,5 +33,10 @@ class StockReceiving extends Model
     public function approver()
     {
         return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    public function items()
+    {
+        return $this->hasMany(StockReceivingItem::class, 'stock_receiving_id');
     }
 }

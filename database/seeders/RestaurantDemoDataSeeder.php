@@ -40,27 +40,70 @@ class RestaurantDemoDataSeeder extends Seeder
         );
         if ($cashierRole) $cashier->syncRoles([$cashierRole]);
 
-        foreach ([['T1', 4], ['T2', 4], ['T3', 2], ['T4', 6]] as [$number, $cap]) {
-            DiningTable::firstOrCreate(['table_number' => $number], ['capacity' => $cap, 'status' => 'available', 'is_active' => true]);
+        foreach ([['T1', 4], ['T2', 4], ['T3', 2], ['T4', 6]] as [$number, $capacity]) {
+            DiningTable::firstOrCreate(
+                ['table_number' => $number],
+                ['capacity' => $capacity, 'status' => 'available', 'is_active' => true]
+            );
         }
 
-        $food = MenuCategory::firstOrCreate(['name' => 'Food'], ['is_active' => true]);
-        $drink = MenuCategory::firstOrCreate(['name' => 'Drinks'], ['is_active' => true]);
+        $food = MenuCategory::firstOrCreate(
+            ['name' => 'Food'],
+            ['type' => 'food', 'is_active' => true]
+        );
 
-        $bread = InventoryItem::firstOrCreate(['name' => 'Bread'], ['unit' => 'pcs', 'minimum_quantity' => 20, 'average_purchase_price' => 5]);
-        $beef = InventoryItem::firstOrCreate(['name' => 'Beef'], ['unit' => 'kg', 'minimum_quantity' => 10, 'average_purchase_price' => 600]);
-        $softDrink = InventoryItem::firstOrCreate(['name' => 'Soft Drink Syrup'], ['unit' => 'ltr', 'minimum_quantity' => 5, 'average_purchase_price' => 120]);
+        $drink = MenuCategory::firstOrCreate(
+            ['name' => 'Drinks'],
+            ['type' => 'drink', 'is_active' => true]
+        );
 
-        $burger = MenuItem::firstOrCreate(['name' => 'Burger'], ['category_id' => $food->id, 'type' => 'food', 'price' => 180, 'is_active' => true, 'is_available' => true]);
-        $cola = MenuItem::firstOrCreate(['name' => 'Cola'], ['category_id' => $drink->id, 'type' => 'drink', 'price' => 60, 'is_active' => true, 'is_available' => true]);
+        $bread = InventoryItem::firstOrCreate(
+            ['name' => 'Bread'],
+            ['base_unit' => 'pcs', 'minimum_quantity' => 20, 'average_purchase_price' => 5]
+        );
+
+        $beef = InventoryItem::firstOrCreate(
+            ['name' => 'Beef'],
+            ['base_unit' => 'kg', 'minimum_quantity' => 10, 'average_purchase_price' => 600]
+        );
+
+        $softDrink = InventoryItem::firstOrCreate(
+            ['name' => 'Soft Drink Syrup'],
+            ['base_unit' => 'L', 'minimum_quantity' => 5, 'average_purchase_price' => 120]
+        );
+
+        $burger = MenuItem::firstOrCreate(
+            ['name' => 'Burger'],
+            ['category_id' => $food->id, 'type' => 'food', 'price' => 180, 'is_active' => true, 'is_available' => true]
+        );
+
+        $cola = MenuItem::firstOrCreate(
+            ['name' => 'Cola'],
+            ['category_id' => $drink->id, 'type' => 'drink', 'price' => 60, 'is_active' => true, 'is_available' => true]
+        );
 
         $burgerRecipe = Recipe::firstOrCreate(['menu_item_id' => $burger->id]);
-        RecipeItem::firstOrCreate(['recipe_id' => $burgerRecipe->id, 'inventory_item_id' => $bread->id], ['quantity' => 2]);
-        RecipeItem::firstOrCreate(['recipe_id' => $burgerRecipe->id, 'inventory_item_id' => $beef->id], ['quantity' => 0.2]);
+
+        RecipeItem::firstOrCreate(
+            ['recipe_id' => $burgerRecipe->id, 'inventory_item_id' => $bread->id],
+            ['quantity' => 2, 'base_unit' => 'pcs']
+        );
+
+        RecipeItem::firstOrCreate(
+            ['recipe_id' => $burgerRecipe->id, 'inventory_item_id' => $beef->id],
+            ['quantity' => 0.2, 'base_unit' => 'kg']
+        );
 
         $colaRecipe = Recipe::firstOrCreate(['menu_item_id' => $cola->id]);
-        RecipeItem::firstOrCreate(['recipe_id' => $colaRecipe->id, 'inventory_item_id' => $softDrink->id], ['quantity' => 0.05]);
 
-        Supplier::firstOrCreate(['name' => 'Default Supplier'], ['phone' => '0000000000', 'email' => 'supplier@restaurant.local', 'is_active' => true]);
+        RecipeItem::firstOrCreate(
+            ['recipe_id' => $colaRecipe->id, 'inventory_item_id' => $softDrink->id],
+            ['quantity' => 0.05, 'base_unit' => 'L']
+        );
+
+        Supplier::firstOrCreate(
+            ['name' => 'Default Supplier'],
+            ['phone' => '0000000000', 'email' => 'supplier@restaurant.local', 'is_active' => true]
+        );
     }
 }

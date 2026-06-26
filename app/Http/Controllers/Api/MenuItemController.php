@@ -27,7 +27,7 @@ class MenuItemController extends Controller
         $page = max(1, $page);
 
         $query = MenuItem::query()
-            ->with(['category:id,name,type'])
+            ->with(['category:id,name,description,icon,sort_order,is_active'])
             ->where('is_active', true)
             ->where('is_available', true)
             ->orderBy('name');
@@ -81,7 +81,7 @@ class MenuItemController extends Controller
             ->where('is_active', true)
             ->orderBy('sort_order')
             ->orderBy('name')
-            ->get(['id', 'name', 'type', 'icon', 'sort_order']);
+            ->get(['id', 'name', 'description', 'icon', 'sort_order']);
 
         return response()->json([
             'success' => true,
@@ -432,7 +432,6 @@ class MenuItemController extends Controller
             $data['category'] = $item->category ? [
                 'id' => $item->category->id,
                 'name' => $item->category->name,
-                'type' => $item->category->type ?? null,
             ] : null;
         } else {
             $data['category'] = $item->category?->name;

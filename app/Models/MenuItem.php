@@ -2,8 +2,8 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
 
 class MenuItem extends Model
 {
@@ -59,7 +59,7 @@ class MenuItem extends Model
 
     public function recipe()
     {
-        return $this->hasMany(Recipe::class, 'menu_item_id');
+        return $this->hasOne(Recipe::class, 'menu_item_id');
     }
 
     public function directInventoryItem()

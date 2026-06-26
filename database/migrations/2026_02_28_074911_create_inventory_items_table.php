@@ -12,7 +12,7 @@ return new class extends Migration {
 
             $table->string('name');
 
-            $table->string('unit'); // kg, liter, pcs
+            $table->enum('base_unit', ['g', 'ml', 'pc'])->default('pc'); // SI base unit used for all inventory quantities
 
             $table->decimal('minimum_quantity', 12, 3)->default(0);
 

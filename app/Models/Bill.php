@@ -10,10 +10,10 @@ class Bill extends Model
     use HasFactory;
 
     protected $fillable = [
-        'order_id', 'status',
+        'order_id', 'bill_number', 'status', 'bill_type', 'credit_status',
         'subtotal', 'tax', 'service_charge', 'discount', 'total',
         'issued_by', 'issued_at',
-        'paid_amount', 'balance', 'paid_at',
+        'paid_amount', 'balance', 'paid_at', 'due_date',
     ];
 
     protected $casts = [
@@ -26,20 +26,11 @@ class Bill extends Model
         'balance' => 'decimal:2',
         'issued_at' => 'datetime',
         'paid_at' => 'datetime',
+        'due_date' => 'datetime',
     ];
 
-    public function order()
-    {
-        return $this->belongsTo(Order::class, 'order_id');
-    }
-
-    public function issuer()
-    {
-        return $this->belongsTo(User::class, 'issued_by');
-    }
-
-    public function payments()
-    {
-        return $this->hasMany(Payment::class, 'bill_id');
-    }
+    public function order() { return $this->belongsTo(Order::class, 'order_id'); }
+    public function issuer() { return $this->belongsTo(User::class, 'issued_by'); }
+    public function payments() { return $this->hasMany(Payment::class, 'bill_id'); }
+    public function creditOrder() { return $this->hasOne(CreditOrder::class, 'bill_id'); }
 }

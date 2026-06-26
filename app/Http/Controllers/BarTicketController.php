@@ -117,7 +117,7 @@ class BarTicketController extends Controller
             if (! in_array($ticket->status, ['pending', 'confirmed'], true)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Ticket not pending',
+                    'message' => 'Ticket is not pending or confirmed',
                 ], 422);
             }
 

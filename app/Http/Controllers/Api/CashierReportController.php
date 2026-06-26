@@ -112,9 +112,23 @@ class CashierReportController extends Controller
         $perPage = max(1, min((int) $request->query('per_page', 10), 100));
         $rows = $query->paginate($perPage);
 
+        $data = collect($rows->items())->map(function (CashShift $shift) {
+            $summary = $this->cashShiftService->summary($shift);
+            $closingCash = $shift->closing_cash !== null ? (float) $shift->closing_cash : null;
+            $expectedCash = (float) ($summary['expected_cash'] ?? 0);
+
+            return array_merge($shift->toArray(), [
+                'cashier' => $shift->cashier,
+                'cashier_name' => $shift->cashier?->name,
+                'summary' => array_merge($summary, [
+                    'variance' => $closingCash !== null ? round($closingCash - $expectedCash, 2) : null,
+                ]),
+            ]);
+        })->values();
+
         return response()->json([
             'success' => true,
-            'data' => $rows->items(),
+            'data' => $data,
             'meta' => [
                 'current_page' => $rows->currentPage(),
                 'last_page' => $rows->lastPage(),
