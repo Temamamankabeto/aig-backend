@@ -35,12 +35,22 @@ class CashierOrderController extends Controller
     {
         $this->authorize('viewAny', Order::class);
 
+        $cashierId = (int) $request->user()->id;
+
         $query = Order::with([
             'table',
+            'creator.roles',
             'waiter',
             'bill',
             'items.menuItem',
-        ])->latest('ordered_at');
+        ])
+            ->where(function ($scope) use ($cashierId) {
+                $scope->where('created_by', $cashierId)
+                    ->orWhereHas('creator.roles', function ($roleQuery) {
+                        $roleQuery->whereRaw('LOWER(name) = ?', ['waiter']);
+                    });
+            })
+            ->latest('ordered_at');
 
         if ($request->filled('search')) {
             $search = trim((string) $request->search);
@@ -72,6 +82,27 @@ class CashierOrderController extends Controller
             in_array($request->order_type, ['dine_in', 'takeaway', 'delivery'], true)
         ) {
             $query->where('order_type', $request->order_type);
+        }
+
+        if ($request->filled('payment_status')) {
+            $paymentStatus = (string) $request->payment_status;
+            $query->whereHas('bill', function ($billQuery) use ($paymentStatus) {
+                $billQuery->where('status', $paymentStatus);
+            });
+        }
+
+        if ($request->filled('waiter_id')) {
+            $query->where('waiter_id', (int) $request->waiter_id);
+        }
+
+        if ($request->filled('period')) {
+            match ((string) $request->period) {
+                'today' => $query->whereDate('ordered_at', today()),
+                'this_week' => $query->whereBetween('ordered_at', [now()->startOfWeek(), now()->endOfWeek()]),
+                'this_month' => $query->whereBetween('ordered_at', [now()->startOfMonth(), now()->endOfMonth()]),
+                'this_year' => $query->whereBetween('ordered_at', [now()->startOfYear(), now()->endOfYear()]),
+                default => null,
+            };
         }
 
         if ($request->filled('date_from')) {

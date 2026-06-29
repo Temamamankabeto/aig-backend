@@ -23,9 +23,6 @@ class MenuItem extends Model
         'views_count',
         'is_featured',
         'menu_mode',
-        'has_ingredients',
-        'inventory_tracking_mode',
-        'direct_inventory_item_id',
     ];
 
     protected $casts = [
@@ -33,7 +30,6 @@ class MenuItem extends Model
         'is_available' => 'boolean',
         'is_active' => 'boolean',
         'is_featured' => 'boolean',
-        'has_ingredients' => 'boolean',
         'modifiers' => 'array',
         'prep_minutes' => 'integer',
         'views_count' => 'integer',
@@ -43,8 +39,6 @@ class MenuItem extends Model
         'views_count' => 0,
         'is_featured' => false,
         'menu_mode' => 'normal',
-        'has_ingredients' => true,
-        'inventory_tracking_mode' => 'recipe',
     ];
 
     public function category()

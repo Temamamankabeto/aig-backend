@@ -54,6 +54,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/cashier/bills/{billId}/payments', [CashierPaymentController::class, 'store']);
     Route::get('/cashier/bills/{billId}/payments', [CashierPaymentController::class, 'history']);
     Route::get('/cashier/payments', [CashierPaymentController::class, 'index']);
+    Route::get('/cashier/payments/sold-items', [CashierPaymentController::class, 'soldItems']);
     Route::get('/cashier/payments/{id}', [CashierPaymentController::class, 'show']);
 
     /*

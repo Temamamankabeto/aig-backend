@@ -21,26 +21,10 @@ class UpdateMenuItemRequest extends FormRequest
     {
         $merged = [];
 
-        foreach (['is_active', 'is_available', 'is_featured', 'remove_image', 'has_ingredients'] as $field) {
+        foreach (['is_active', 'is_available', 'is_featured', 'remove_image'] as $field) {
             if ($this->has($field)) {
                 $merged[$field] = $this->normalizeBoolean($this->input($field));
             }
-        }
-
-        if ($this->has('inventory_tracking_mode')) {
-            $mode = $this->input('inventory_tracking_mode');
-
-            if ($mode === '') {
-                $merged['inventory_tracking_mode'] = null;
-            } elseif ($mode !== 'direct') {
-                $merged['direct_inventory_item_id'] = null;
-            }
-        }
-
-        if ($this->has('direct_inventory_item_id')) {
-            $merged['direct_inventory_item_id'] = $this->input('direct_inventory_item_id') === ''
-                ? null
-                : (int) $this->input('direct_inventory_item_id');
         }
 
         if ($this->has('category_id') && $this->input('category_id') !== '') {
@@ -94,14 +78,6 @@ class UpdateMenuItemRequest extends FormRequest
             'is_available' => ['sometimes', 'nullable', 'boolean'],
             'is_active' => ['sometimes', 'nullable', 'boolean'],
             'is_featured' => ['sometimes', 'nullable', 'boolean'],
-            'has_ingredients' => ['sometimes', 'nullable', 'boolean'],
-            'inventory_tracking_mode' => ['sometimes', 'required', Rule::in(['recipe', 'direct', 'none'])],
-            'direct_inventory_item_id' => [
-                'nullable',
-                'integer',
-                'required_if:inventory_tracking_mode,direct',
-                'exists:inventory_items,id',
-            ],
             'menu_mode' => ['sometimes', 'nullable', Rule::in(['normal', 'spatial'])],
             'modifiers' => ['sometimes', 'nullable'],
             'prep_minutes' => ['sometimes', 'nullable', 'integer', 'min:0'],

@@ -27,7 +27,7 @@ class PaymentController extends Controller
         $this->authorize('viewAny', Payment::class);
     
         $q = Payment::query()
-            ->with(['bill.order', 'receiver', 'refundRequest'])
+            ->with(['bill.order.items.menuItem', 'bill.order.waiter', 'receiver', 'refundRequest'])
             ->orderByDesc('id');
     
         if ($request->filled('bill_id')) {
@@ -40,6 +40,14 @@ class PaymentController extends Controller
     
         if ($request->filled('method')) {
             $q->where('method', (string) $request->string('method'));
+        }
+
+        if ($request->filled('cash_shift_id')) {
+            $q->where('cash_shift_id', (int) $request->integer('cash_shift_id'));
+        }
+
+        if ($request->is('api/cashier/payments') || $request->is('cashier/payments')) {
+            $q->where('received_by', $request->user()->id);
         }
     
         if ($request->filled('search')) {
@@ -65,6 +73,158 @@ class PaymentController extends Controller
                 'last_page' => $payments->lastPage(),
                 'per_page' => $payments->perPage(),
                 'total' => $payments->total(),
+            ],
+        ]);
+    }
+
+
+    public function soldItems(Request $request)
+    {
+        $this->authorize('viewAny', Payment::class);
+
+        $query = Payment::query()
+            ->with([
+                'bill.order.items.menuItem.category',
+                'bill.order.waiter',
+                'bill.order.table',
+                'receiver',
+                'cashShift',
+            ])
+            ->where('status', 'paid')
+            ->where('received_by', $request->user()->id)
+            ->orderByDesc('paid_at')
+            ->orderByDesc('id');
+
+        if ($request->filled('cash_shift_id')) {
+            $query->where('cash_shift_id', (int) $request->integer('cash_shift_id'));
+        }
+
+        if ($request->filled('method')) {
+            $query->where('method', (string) $request->string('method'));
+        }
+
+        if ($request->filled('waiter_id')) {
+            $query->whereHas('bill.order', function ($orderQuery) use ($request) {
+                $orderQuery->where('waiter_id', (int) $request->integer('waiter_id'));
+            });
+        }
+
+        $period = (string) $request->query('period', 'today');
+        $dateColumn = 'paid_at';
+
+        if ($period === 'today') {
+            $query->whereBetween($dateColumn, [now()->startOfDay(), now()->endOfDay()]);
+        } elseif ($period === 'this_week') {
+            $query->whereBetween($dateColumn, [now()->startOfWeek(), now()->endOfWeek()]);
+        } elseif ($period === 'this_month') {
+            $query->whereBetween($dateColumn, [now()->startOfMonth(), now()->endOfMonth()]);
+        } elseif ($period === 'this_year') {
+            $query->whereBetween($dateColumn, [now()->startOfYear(), now()->endOfYear()]);
+        } elseif ($period === 'custom') {
+            if ($request->filled('date_from')) {
+                $query->where($dateColumn, '>=', now()->parse($request->query('date_from'))->startOfDay());
+            }
+            if ($request->filled('date_to')) {
+                $query->where($dateColumn, '<=', now()->parse($request->query('date_to'))->endOfDay());
+            }
+        }
+
+        if ($request->filled('search')) {
+            $search = trim((string) $request->string('search'));
+            $query->where(function ($paymentQuery) use ($search) {
+                $paymentQuery->where('reference', 'like', "%{$search}%")
+                    ->orWhereHas('bill', function ($billQuery) use ($search) {
+                        $billQuery->where('bill_number', 'like', "%{$search}%");
+                    })
+                    ->orWhereHas('bill.order', function ($orderQuery) use ($search) {
+                        $orderQuery->where('order_number', 'like', "%{$search}%")
+                            ->orWhere('customer_name', 'like', "%{$search}%");
+                    })
+                    ->orWhereHas('bill.order.items.menuItem', function ($menuQuery) use ($search) {
+                        $menuQuery->where('name', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        $payments = $query->get();
+        $rows = collect();
+
+        foreach ($payments as $payment) {
+            $bill = $payment->bill;
+            $order = $bill?->order;
+
+            if (! $bill || ! $order) {
+                continue;
+            }
+
+            $items = $order->items ?? collect();
+            $subtotal = (float) ($bill->subtotal ?? $order->subtotal ?? $items->sum(fn ($item) => (float) ($item->line_total ?? 0)));
+            $vatTotal = (float) ($bill->tax ?? $order->tax ?? 0);
+            $serviceTotal = (float) ($bill->service_charge ?? $order->service_charge ?? 0);
+
+            foreach ($items as $item) {
+                $lineTotal = (float) ($item->line_total ?? ((float) $item->quantity * (float) $item->unit_price));
+                $ratio = $subtotal > 0 ? $lineTotal / $subtotal : 0;
+                $vat = round($vatTotal * $ratio, 2);
+                $serviceCharge = round($serviceTotal * $ratio, 2);
+
+                $rows->push([
+                    'id' => $payment->id . '-' . $item->id,
+                    'payment_id' => $payment->id,
+                    'bill_id' => $bill->id,
+                    'bill_number' => $bill->bill_number,
+                    'order_id' => $order->id,
+                    'order_number' => $order->order_number,
+                    'order_type' => $order->order_type,
+                    'table_number' => $order->table?->table_number,
+                    'customer_name' => $order->customer_name,
+                    'waiter_id' => $order->waiter_id,
+                    'waiter_name' => $order->waiter?->name,
+                    'cashier_id' => $payment->received_by,
+                    'cashier_name' => $payment->receiver?->name,
+                    'cash_shift_id' => $payment->cash_shift_id,
+                    'item_id' => $item->id,
+                    'menu_item_id' => $item->menu_item_id,
+                    'item_name' => $item->menuItem?->name ?? 'Menu Item',
+                    'category_name' => $item->menuItem?->category?->name,
+                    'type' => $item->menuItem?->type ?? $item->station,
+                    'station' => $item->station,
+                    'quantity' => (float) $item->quantity,
+                    'unit_price' => (float) $item->unit_price,
+                    'line_total' => round($lineTotal, 2),
+                    'service_charge' => $serviceCharge,
+                    'vat' => $vat,
+                    'total' => round($lineTotal + $serviceCharge + $vat, 2),
+                    'payment_method' => $payment->method,
+                    'payment_amount' => (float) $payment->amount,
+                    'paid_at' => optional($payment->paid_at)->toDateTimeString(),
+                    'created_at' => optional($payment->created_at)->toDateTimeString(),
+                ]);
+            }
+        }
+
+        $perPage = max(1, min((int) $request->query('per_page', 100), 500));
+        $page = max(1, (int) $request->query('page', 1));
+        $total = $rows->count();
+        $pagedRows = $rows->slice(($page - 1) * $perPage, $perPage)->values();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Cashier sold items loaded successfully.',
+            'data' => $pagedRows,
+            'meta' => [
+                'current_page' => $page,
+                'last_page' => (int) max(1, ceil($total / $perPage)),
+                'per_page' => $perPage,
+                'total' => $total,
+                'summary' => [
+                    'items_count' => $rows->count(),
+                    'quantity' => round((float) $rows->sum('quantity'), 2),
+                    'subtotal' => round((float) $rows->sum('line_total'), 2),
+                    'service_charge' => round((float) $rows->sum('service_charge'), 2),
+                    'vat' => round((float) $rows->sum('vat'), 2),
+                    'total' => round((float) $rows->sum('total'), 2),
+                ],
             ],
         ]);
     }
@@ -113,10 +273,11 @@ class PaymentController extends Controller
                 ], 422);
             }
     
+            $isCashierPayment = $request->is('api/cashier/bills/*/payments') || $request->is('cashier/bills/*/payments');
             $shiftId = $data['cash_shift_id'] ?? null;
             $shift = null;
 
-            if ($data['method'] === 'cash' || $shiftId) {
+            if ($isCashierPayment || $shiftId) {
                 $shift = $shiftId
                     ? CashShift::lockForUpdate()->findOrFail($shiftId)
                     : CashShift::where('cashier_id', $request->user()->id)
@@ -127,7 +288,7 @@ class PaymentController extends Controller
                 if (! $shift || $shift->status !== 'open') {
                     return response()->json([
                         'success' => false,
-                        'message' => 'An open cash shift is required for cash payments',
+                        'message' => 'An open cashier shift is required before recording payments',
                     ], 422);
                 }
 
@@ -213,6 +374,7 @@ class PaymentController extends Controller
     
             return response()->json([
                 'success' => true,
+                'message' => 'Payment recorded successfully.',
                 'data' => [
                     'payment' => $payment->fresh(['receiver']),
                     'bill' => $bill->fresh(['payments', 'order']),

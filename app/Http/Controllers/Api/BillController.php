@@ -19,10 +19,10 @@ class BillController extends Controller
     {
         $this->authorize('viewAny', Bill::class);
     
-        $q = Bill::query()->with(['order.table', 'order.waiter', 'payments']);
+        $q = Bill::query()->with(['order.table', 'order.waiter', 'payments.receiver']);
     
         if ($request->filled('status')) {
-            $q->where('status', $request->string('status'));
+            $q->where('status', (string) $request->string('status'));
         }
     
         if ($request->filled('order_id')) {
@@ -32,10 +32,13 @@ class BillController extends Controller
         if ($request->filled('search')) {
             $search = trim((string) $request->string('search'));
     
-            $q->whereHas('order', function ($sub) use ($search) {
-                $sub->where('order_number', 'like', "%{$search}%")
+            $q->where(function ($billSearch) use ($search) {
+                $billSearch->where('bill_number', 'like', "%{$search}%")
+                    ->orWhereHas('order', function ($sub) use ($search) {
+                        $sub->where('order_number', 'like', "%{$search}%")
                     ->orWhere('customer_name', 'like', "%{$search}%")
                     ->orWhere('customer_phone', 'like', "%{$search}%");
+                    });
             });
         }
     
