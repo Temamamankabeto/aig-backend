@@ -5,10 +5,16 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\CreditAccount;
 use App\Models\CreditAccountUser;
+use App\Models\CreditAgreement;
 use Illuminate\Http\Request;
 
 class CreditCardController extends Controller
 {
+    public function scan(Request $request)
+    {
+        return $this->validate($request);
+    }
+
     public function validate(Request $request)
     {
         abort_unless($request->user()?->can('credit.accounts.read') || $request->user()?->can('credit.orders.create'), 403, 'You are not authorized to validate credit cards.');
@@ -26,7 +32,7 @@ class CreditCardController extends Controller
             ], 422);
         }
 
-        $account = CreditAccount::with(['authorizedUsers'])->find($parsed['credit_account_id']);
+        $account = CreditAccount::with(['authorizedUsers', 'activeAgreements'])->find($parsed['credit_account_id']);
 
         if (!$account) {
             return response()->json([
@@ -35,19 +41,24 @@ class CreditCardController extends Controller
             ], 404);
         }
 
-        $available = round((float) $account->credit_limit - (float) $account->current_balance, 2);
+        $activeAgreement = CreditAgreement::where('credit_account_id', $account->id)
+            ->where('status', 'active')
+            ->whereDate('start_date', '<=', now()->toDateString())
+            ->whereDate('end_date', '>=', now()->toDateString())
+            ->orderByDesc('end_date')
+            ->first();
         $accountActive = (bool) $account->is_credit_enabled && $account->status === 'active';
-        $isOrganization = strtolower((string) $account->account_type) === 'organization';
+        $isOrganization = strtolower((string) $account->account_type) === 'bulky';
         $authorizedUser = null;
 
         if ($isOrganization) {
             if (!$parsed['authorized_user_id']) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Organization card must include an authorized user scan value.',
+                    'message' => 'Bulky account card must include an authorized user scan value.',
                     'data' => [
                         'account' => $account,
-                        'available_limit' => $available,
+                        'active_agreement' => $activeAgreement,
                         'requires_authorized_user' => true,
                     ],
                 ], 422);
@@ -71,7 +82,7 @@ class CreditCardController extends Controller
                     'data' => [
                         'account' => $account,
                         'authorized_user' => $authorizedUser,
-                        'available_limit' => $available,
+                        'active_agreement' => $activeAgreement,
                     ],
                 ], 422);
             }
@@ -84,20 +95,19 @@ class CreditCardController extends Controller
                 'data' => [
                     'account' => $account,
                     'authorized_user' => $authorizedUser,
-                    'available_limit' => $available,
+                    'active_agreement' => $activeAgreement,
                 ],
             ], 422);
         }
 
-        if ($available <= 0) {
+        if (!$activeAgreement) {
             return response()->json([
                 'success' => false,
-                'message' => 'Credit account available balance is empty. Ask account holder to request additional credit limit.',
+                'message' => 'No active agreement is available for this credit account. Credit order is not allowed.',
                 'data' => [
                     'account' => $account,
                     'authorized_user' => $authorizedUser,
-                    'available_limit' => $available,
-                    'is_empty_balance' => true,
+                    'active_agreement' => null,
                 ],
             ], 422);
         }
@@ -110,7 +120,7 @@ class CreditCardController extends Controller
                 'authorized_user' => $authorizedUser,
                 'credit_account_id' => $account->id,
                 'credit_account_user_id' => $authorizedUser?->id,
-                'available_limit' => $available,
+                'active_agreement' => $activeAgreement,
                 'is_organization' => $isOrganization,
                 'is_active' => true,
             ],

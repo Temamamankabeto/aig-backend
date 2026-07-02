@@ -8,6 +8,7 @@ use App\Models\CreditAccountUser;
 use App\Models\CreditApprovalLog;
 use App\Models\CreditOrder;
 use App\Models\CreditOrderAuthorizedUser;
+use App\Models\CreditAgreement;
 use App\Models\CreditSettlement;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -22,9 +23,10 @@ class CreditOrderService
         ?string $notes = null,
         bool $overrideLimit = false,
         int|array|null $creditAccountUserIds = null,
-        bool $allowDailyLimitOverage = false
+        bool $allowDailyLimitOverage = false,
+        ?int $creditAgreementId = null
     ): CreditOrder {
-        return DB::transaction(function () use ($bill, $creditAccountId, $userId, $dueDate, $notes, $overrideLimit, $creditAccountUserIds, $allowDailyLimitOverage) {
+        return DB::transaction(function () use ($bill, $creditAccountId, $userId, $dueDate, $notes, $overrideLimit, $creditAccountUserIds, $allowDailyLimitOverage, $creditAgreementId) {
             $bill = Bill::with('order')->lockForUpdate()->findOrFail($bill->id);
             $account = CreditAccount::lockForUpdate()->findOrFail($creditAccountId);
 
@@ -33,36 +35,39 @@ class CreditOrderService
             }
 
             $total = round((float) $bill->total, 2);
-            $available = round((float) $account->credit_limit - (float) $account->current_balance, 2);
+            $agreementQuery = CreditAgreement::where('credit_account_id', $account->id)
+                ->where('status', 'active')
+                ->whereDate('start_date', '<=', now()->toDateString())
+                ->whereDate('end_date', '>=', now()->toDateString())
+                ->lockForUpdate();
 
-            if (!$overrideLimit && $total > $available) {
-                throw new RuntimeException('Credit limit exceeded. Remaining limit: ' . number_format($available, 2));
+            $agreement = $creditAgreementId
+                ? (clone $agreementQuery)->where('id', $creditAgreementId)->first()
+                : $agreementQuery->orderByDesc('end_date')->first();
+
+            if (!$agreement) {
+                throw new RuntimeException('No active credit agreement is available for this account. Credit order is not allowed.');
             }
 
-            $authorizedUsers = collect();
-            if (strtolower((string) $account->account_type) === 'organization') {
-                $ids = collect(is_array($creditAccountUserIds) ? $creditAccountUserIds : [$creditAccountUserIds])
-                    ->filter(fn ($id) => !empty($id))
-                    ->map(fn ($id) => (int) $id)
-                    ->unique()
-                    ->values();
+            $ids = collect(is_array($creditAccountUserIds) ? $creditAccountUserIds : [$creditAccountUserIds])
+                ->filter(fn ($id) => !empty($id))
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values();
 
-                if ($ids->isEmpty()) {
-                    throw new RuntimeException('At least one authorized person is required for organization credit account.');
-                }
-
-                $authorizedUsers = CreditAccountUser::where('credit_account_id', $account->id)
+            $authorizedUsers = $ids->isNotEmpty()
+                ? CreditAccountUser::where('credit_account_id', $account->id)
                     ->whereIn('id', $ids->all())
                     ->lockForUpdate()
-                    ->get();
+                    ->get()
+                : collect();
 
-                if ($authorizedUsers->count() !== $ids->count()) {
-                    throw new RuntimeException('One or more selected authorized persons are invalid for this credit account.');
-                }
+            if ($authorizedUsers->count() !== $ids->count()) {
+                throw new RuntimeException('One or more selected authorized persons are invalid for this credit account.');
+            }
 
-                if ($authorizedUsers->contains(fn ($user) => ! (bool) $user->is_active)) {
-                    throw new RuntimeException('One or more selected authorized persons are disabled for this credit account.');
-                }
+            if ($authorizedUsers->contains(fn ($user) => ! (bool) $user->is_active)) {
+                throw new RuntimeException('One or more selected authorized persons are disabled for this credit account.');
             }
 
             $allocationAmount = $authorizedUsers->count() > 0
@@ -95,6 +100,7 @@ class CreditOrderService
                 'bill_id' => $bill->id,
                 'credit_account_id' => $account->id,
                 'credit_account_user_id' => $primaryAuthorizedUser?->id,
+                'credit_agreement_id' => $agreement->id,
                 'used_by_name' => $usedByName,
                 'used_by_phone' => $usedByPhone,
                 'credit_reference' => $this->reference(),
@@ -152,38 +158,21 @@ class CreditOrderService
 
     private function assertAuthorizedUserLimit(CreditAccountUser $user, float $amount, bool $overrideLimit = false, bool $allowDailyLimitOverage = false): void
     {
-        if ($overrideLimit) {
-            return;
-        }
-
-        $dailyLimit = $user->daily_limit !== null ? round((float) $user->daily_limit, 2) : null;
-        $monthlyLimit = $user->monthly_limit !== null ? round((float) $user->monthly_limit, 2) : null;
-
-        $todayUsage = round((float) CreditOrderAuthorizedUser::where('credit_account_user_id', $user->id)
-            ->whereDate('created_at', now()->toDateString())
-            ->sum('allocated_amount'), 2);
-
-        $monthUsage = round((float) CreditOrderAuthorizedUser::where('credit_account_user_id', $user->id)
-            ->whereYear('created_at', now()->year)
-            ->whereMonth('created_at', now()->month)
-            ->sum('allocated_amount'), 2);
-
-        if (!$allowDailyLimitOverage && $dailyLimit !== null && $dailyLimit > 0 && round($todayUsage + $amount, 2) > $dailyLimit) {
-            throw new RuntimeException("Daily credit limit exceeded for {$user->full_name}. Limit: " . number_format($dailyLimit, 2) . ', used today: ' . number_format($todayUsage, 2));
-        }
-
-        if ($monthlyLimit !== null && $monthlyLimit > 0 && round($monthUsage + $amount, 2) > $monthlyLimit) {
-            throw new RuntimeException("Monthly credit limit exceeded for {$user->full_name}. Limit: " . number_format($monthlyLimit, 2) . ', used this month: ' . number_format($monthUsage, 2));
-        }
+        // Limit logic was intentionally removed. Authorized users are controlled by active/inactive status
+        // and account agreements. Keep this method as a no-op to preserve the service contract.
+        return;
     }
 
     private function calculateDueDateFromAccount(CreditAccount $account)
     {
-        return match ((string) ($account->settlement_cycle ?? 'monthly')) {
-            'daily' => now()->addDay(),
-            'weekly' => now()->addWeek(),
-            default => now()->addMonth(),
-        };
+        $agreement = CreditAgreement::where('credit_account_id', $account->id)
+            ->where('status', 'active')
+            ->whereDate('start_date', '<=', now()->toDateString())
+            ->whereDate('end_date', '>=', now()->toDateString())
+            ->orderByDesc('end_date')
+            ->first();
+
+        return $agreement?->end_date ?? now()->addMonth();
     }
 
     public function settle(CreditOrder $creditOrder, array $data, int $userId): CreditOrder

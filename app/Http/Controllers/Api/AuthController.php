@@ -55,16 +55,29 @@ class AuthController extends Controller
 
     public function login(Request $request)
     {
-        $request->validate([
-            'email' => ['required', 'email'],
+        $validated = $request->validate([
+            'login' => ['nullable', 'string', 'max:255'],
+            'identifier' => ['nullable', 'string', 'max:255'],
+            'email' => ['nullable', 'string', 'max:255'],
             'password' => ['required', 'string'],
         ]);
 
-        $user = User::where('email', $request->email)->first();
+        $login = trim((string) ($validated['login'] ?? $validated['identifier'] ?? $validated['email'] ?? ''));
 
-        if (!$user || !Hash::check($request->password, $user->password)) {
+        if ($login === '') {
             throw ValidationException::withMessages([
-                'email' => ['Invalid email or password.'],
+                'login' => ['Email or phone number is required.'],
+            ]);
+        }
+
+        $user = User::query()
+            ->where('email', $login)
+            ->orWhere('phone', $login)
+            ->first();
+
+        if (!$user || !Hash::check($validated['password'], $user->password)) {
+            throw ValidationException::withMessages([
+                'login' => ['Invalid email/phone number or password.'],
             ]);
         }
 

@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\CreditCardController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth:sanctum'])->group(function () {
+    Route::get('/credit/cards/scan', [CreditCardController::class, 'scan']);
     Route::post('/credit/cards/validate', [CreditCardController::class, 'validate']);
     Route::get('/credit/accounts', [CreditOrderController::class, 'accounts']);
     Route::post('/credit/accounts', [CreditOrderController::class, 'storeAccount']);
@@ -14,6 +15,13 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::patch('/credit/accounts/{id}/toggle', [CreditOrderController::class, 'toggleAccount']);
     Route::patch('/credit/accounts/{id}/block', [CreditOrderController::class, 'blockAccount']);
     Route::patch('/credit/accounts/{id}/unblock', [CreditOrderController::class, 'unblockAccount']);
+
+    Route::get('/credit/accounts/{id}/agreements', [CreditOrderController::class, 'agreements']);
+    Route::post('/credit/accounts/{id}/agreements', [CreditOrderController::class, 'storeAgreement']);
+    Route::post('/credit/accounts/{id}/agreements/{agreementId}', [CreditOrderController::class, 'updateAgreement']);
+    Route::put('/credit/accounts/{id}/agreements/{agreementId}', [CreditOrderController::class, 'updateAgreement']);
+    Route::patch('/credit/accounts/{id}/agreements/{agreementId}/disable', [CreditOrderController::class, 'disableAgreement']);
+    Route::get('/credit/agreements/{agreementId}/file', [CreditOrderController::class, 'agreementFile']);
 
     Route::get('/credit/accounts/{id}/users', [CreditAccountUserController::class, 'index']);
     Route::post('/credit/accounts/{id}/users', [CreditAccountUserController::class, 'store']);

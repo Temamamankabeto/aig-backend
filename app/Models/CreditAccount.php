@@ -11,6 +11,9 @@ class CreditAccount extends Model
         'customer_id',
         'organization_id',
         'name',
+        'tin_number',
+        'representative_name',
+        'representative_phone',
         'phone',
         'email',
         'credit_limit',
@@ -43,4 +46,18 @@ class CreditAccount extends Model
     {
         return $this->hasMany(CreditAccountUser::class);
     }
+
+    public function agreements()
+    {
+        return $this->hasMany(CreditAgreement::class);
+    }
+
+    public function activeAgreements()
+    {
+        return $this->hasMany(CreditAgreement::class)
+            ->where('status', 'active')
+            ->whereDate('start_date', '<=', now()->toDateString())
+            ->whereDate('end_date', '>=', now()->toDateString());
+    }
 }
+

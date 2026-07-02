@@ -236,8 +236,16 @@ class RolesPermissionsSeeder extends Seeder
 
                 'stock.receive',
 
+                'suppliers.read',
+
                 'purchase_orders.read',
+                'purchase_orders.create',
+                'purchase_orders.submit',
                 'purchase_orders.receive',
+
+                'purchase_requests.create',
+                'purchases.read',
+                'purchases.create',
 
                 // FIXED: this must be inside Store Keeper array
                 'package.orders.read',

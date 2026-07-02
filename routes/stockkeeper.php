@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\InventoryItemController;
 use App\Http\Controllers\Api\InventoryTransactionController;
 use App\Http\Controllers\Api\PurchaseOrderController;
 use App\Http\Controllers\Api\StockReceivingController;
+use App\Http\Controllers\Api\SupplierController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth:sanctum'])
@@ -16,12 +17,19 @@ Route::middleware(['auth:sanctum'])
         Route::get('/inventory/transactions', [InventoryTransactionController::class, 'index']);
         Route::post('/inventory/items/{id}/adjust', [InventoryTransactionController::class, 'adjust']);
         Route::post('/inventory/items/{id}/waste', [InventoryTransactionController::class, 'waste']);
+        Route::post('/inventory/items/{id}/stockout', [InventoryTransactionController::class, 'stockout']);
         Route::post('/inventory/items/{id}/transfer', [InventoryTransactionController::class, 'transfer']);
 
         Route::get('/inventory/batches', [InventoryBatchController::class, 'index']);
 
+        Route::get('/suppliers', [SupplierController::class, 'index']);
+        Route::get('/suppliers/{id}', [SupplierController::class, 'show']);
+
         Route::get('/purchase-orders', [PurchaseOrderController::class, 'index']);
         Route::get('/purchase-orders/{id}', [PurchaseOrderController::class, 'show']);
+        Route::get('/purchase-orders/{id}/history', [PurchaseOrderController::class, 'history']);
+        Route::post('/purchase-orders', [PurchaseOrderController::class, 'store']);
+        Route::post('/purchase-orders/{id}/submit', [PurchaseOrderController::class, 'submit']);
 
         Route::get('/stock-receivings', [StockReceivingController::class, 'index']);
         Route::get('/stock-receivings/{id}', [StockReceivingController::class, 'show']);

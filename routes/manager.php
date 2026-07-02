@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\AnalyticsReportController;
 use App\Http\Controllers\Api\InventoryReportController;
 use App\Http\Controllers\Api\DiningTableController;
+use App\Http\Controllers\Api\PurchaseOrderController;
 use Illuminate\Support\Facades\Route;
 use App\Models\User;
 
@@ -63,4 +64,13 @@ Route::middleware(['auth:sanctum'])->group(function () {
             'meta' => ['total' => $users->count()],
         ]);
     });
+
+    // Purchase approval workflow for Cafeteria Manager.
+    // Flow: Store Keeper/Purchaser submits -> F&B Controller validates -> Manager approves -> Stock Keeper receives.
+    Route::get('/manager/purchase-orders', [PurchaseOrderController::class, 'index']);
+    Route::get('/manager/purchase-orders/{id}', [PurchaseOrderController::class, 'show']);
+    Route::get('/manager/purchase-orders/{id}/history', [PurchaseOrderController::class, 'history']);
+    Route::post('/manager/purchase-orders/{id}/approve', [PurchaseOrderController::class, 'approve']);
+    Route::post('/manager/purchase-orders/{id}/cancel', [PurchaseOrderController::class, 'cancel']);
+
 });

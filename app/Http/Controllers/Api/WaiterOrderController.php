@@ -278,9 +278,9 @@ public function store(StoreOrderRequest $request)
             ], 422);
         }
 
-        // Payment type is intentionally not set at order creation.
-        // Cashier records cash/card/mobile/transfer/credit later during payment.
-        unset($validated['payment_type'], $validated['credit_account_id'], $validated['credit_due_date'], $validated['credit_notes'], $validated['override_credit_limit']);
+        // Waiters can create cash orders only. Cashier confirms and collects payment later.
+        unset($validated['credit_account_id'], $validated['credit_due_date'], $validated['credit_notes'], $validated['override_credit_limit']);
+        $validated['payment_type'] = 'cash';
 
         $validated['waiter_id'] = $userId;
         $validated['created_by'] = $userId;
@@ -391,10 +391,10 @@ public function store(StoreOrderRequest $request)
    ->lockForUpdate()
    ->findOrFail($id);
 
-   if (!in_array($order->status, ['confirmed', 'in_progress', 'ready'], true)) {
+   if (!in_array($order->status, ['submitted', 'pending', 'confirmed', 'in_progress', 'ready'], true)) {
    return response()->json([
    'success' => false,
-   'message' => 'Only confirmed, in-progress, or ready orders can request cancellation.',
+   'message' => 'Only submitted, pending, confirmed, in-progress, or ready orders can request cancellation.',
    ], 422);
    }
 
@@ -598,7 +598,7 @@ public function cancelableOrders(Request $request)
 
  $query = Order::with(['table', 'items.menuItem', 'bill'])
  ->where('waiter_id', $waiterId)
- ->whereIn('status', ['confirmed', 'in_progress', 'ready'])
+ ->whereIn('status', ['submitted', 'pending', 'confirmed', 'in_progress', 'ready'])
  ->where('ordered_at', '>=', now()->subMinutes(10));
 
  if ($request->filled('search')) {
@@ -1064,17 +1064,17 @@ $order = Order::with(['items.menuItem', 'table', 'bill'])
 ->lockForUpdate()
 ->findOrFail($id);
 
-if (!in_array($order->status, ['pending', 'confirmed'], true)) {
+if (!in_array($order->status, ['submitted', 'pending', 'confirmed'], true)) {
 return response()->json([
 'success' => false,
-'message' => 'Only pending or confirmed orders can be confirmed.',
+'message' => 'Only submitted, pending, or confirmed orders can be confirmed.',
 ], 422);
 }
 
-// Update order status. Confirm is idempotent because waiter orders are confirmed at creation.
+// Update order status. Cashier/authorized confirmation moves waiter submitted orders into preparation workflow.
 $order->update([
 'status' => 'confirmed',
-'waiter_id' => auth()->id(),
+'waiter_id' => $order->waiter_id ?: auth()->id(),
 ]);
 
 $this->auditLogger->log(request(), auth()->id(), 'Order', $order->id, 'order_confirmed', null, $order->toArray(), 'Order confirmed by waiter.');

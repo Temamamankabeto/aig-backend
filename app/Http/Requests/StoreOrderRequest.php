@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Models\Order;
 use App\Models\CreditAccount;
+use App\Models\CreditAgreement;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -28,11 +29,15 @@ class StoreOrderRequest extends FormRequest
             'payment_type' => ['nullable', 'in:regular,cash,card,mobile,transfer,credit'],
             'credit_account_id' => ['nullable', 'integer', 'exists:credit_accounts,id'],
             'credit_account_user_id' => ['nullable', 'integer', 'exists:credit_account_users,id'],
+            'credit_agreement_id' => ['nullable', 'integer', 'exists:credit_agreements,id'],
             'credit_account_user_ids' => ['nullable', 'array'],
             'credit_account_user_ids.*' => ['integer', 'exists:credit_account_users,id'],
             'credit_notes' => ['nullable', 'string', 'max:1000'],
-            'override_credit_limit' => ['nullable', 'boolean'],
-            'items' => ['required', 'array', 'min:1'],
+            'credit_order_mode' => ['nullable', 'in:order_based,beef_based'],
+            'meal_type' => ['nullable', 'string', 'max:80'],
+            'number_of_person' => ['nullable', 'integer', 'min:1'],
+            'customer_tin' => ['nullable', 'string', 'max:80'],
+            'items' => ['nullable', 'array'],
             'items.*.menu_item_id' => ['required', 'integer', 'exists:menu_items,id'],
             'items.*.quantity' => ['required', 'integer', 'min:1'],
             'items.*.notes' => ['nullable', 'string'],
@@ -75,31 +80,38 @@ class StoreOrderRequest extends FormRequest
 
                 $account = CreditAccount::find($this->input('credit_account_id'));
 
-                if ($account && strtolower((string) $account->account_type) === 'organization') {
-                    $ids = collect($this->input('credit_account_user_ids', []))
-                        ->filter(fn ($id) => !empty($id))
-                        ->map(fn ($id) => (int) $id)
-                        ->unique()
-                        ->values();
 
-                    if ($ids->isEmpty() && $this->filled('credit_account_user_id')) {
-                        $ids = collect([(int) $this->input('credit_account_user_id')]);
+                if ($account) {
+                    $agreementQuery = CreditAgreement::where('credit_account_id', $account->id)
+                        ->where('status', 'active')
+                        ->whereDate('start_date', '<=', now()->toDateString())
+                        ->whereDate('end_date', '>=', now()->toDateString());
+
+                    if ($this->filled('credit_agreement_id')) {
+                        $agreementQuery->where('id', $this->input('credit_agreement_id'));
                     }
 
-                    if ($ids->isEmpty()) {
-                        $validator->errors()->add('credit_account_user_ids', 'At least one authorized person is required for organization credit accounts.');
+                    if (!$agreementQuery->exists()) {
+                        $validator->errors()->add('credit_agreement_id', 'This credit account has no active agreement for today. Credit order is not allowed.');
                         return;
                     }
+                }
 
-                    $validCount = $account->authorizedUsers()
-                        ->whereIn('id', $ids->all())
-                        ->where('is_active', true)
-                        ->count();
+                // Authorized users are optional in the agreement-based credit workflow.
+                // Single accounts use the cashier-entered customer name on bill print; bulky accounts use the active agreement.
 
-                    if ($validCount !== $ids->count()) {
-                        $validator->errors()->add('credit_account_user_ids', 'One or more selected authorized persons are not active for this credit account.');
+                if ($this->input('credit_order_mode') === 'beef_based') {
+                    if (!$this->filled('meal_type')) {
+                        $validator->errors()->add('meal_type', 'Meal type is required for beef-based credit orders.');
+                    }
+                    if (!$this->filled('number_of_person')) {
+                        $validator->errors()->add('number_of_person', 'Number of persons is required for beef-based credit orders.');
                     }
                 }
+            }
+
+            if ($this->input('credit_order_mode') !== 'beef_based' && collect($this->input('items', []))->isEmpty()) {
+                $validator->errors()->add('items', 'At least one valid order item is required.');
             }
         });
     }
@@ -130,6 +142,9 @@ class StoreOrderRequest extends FormRequest
             'items' => $items,
             'credit_account_user_ids' => $userIds,
             'credit_account_user_id' => $userIds[0] ?? $this->input('credit_account_user_id'),
+            'credit_order_mode' => $this->filled('credit_order_mode') ? $this->input('credit_order_mode') : 'order_based',
+            'meal_type' => $this->filled('meal_type') ? trim((string) $this->input('meal_type')) : $this->input('meal_type'),
+            'customer_tin' => $this->filled('customer_tin') ? trim((string) $this->input('customer_tin')) : $this->input('customer_tin'),
         ]);
     }
 

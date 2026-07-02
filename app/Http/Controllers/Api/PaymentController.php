@@ -203,6 +203,109 @@ class PaymentController extends Controller
             }
         }
 
+        // Credit bills do not create cash payments, but they must still appear in cashier sold-items and shift reports.
+        $creditBillsQuery = Bill::query()
+            ->with(['order.items.menuItem.category', 'order.waiter', 'order.table', 'issuer'])
+            ->where(function ($billQuery) {
+                $billQuery->where('bill_type', 'credit')->orWhere('payment_method', 'credit');
+            })
+            ->where('issued_by', $request->user()->id)
+            ->orderByDesc('issued_at')
+            ->orderByDesc('id');
+
+        if ($request->filled('cash_shift_id')) {
+            $creditBillsQuery->where('cash_shift_id', (int) $request->integer('cash_shift_id'));
+        }
+
+        if ($request->filled('waiter_id')) {
+            $creditBillsQuery->whereHas('order', function ($orderQuery) use ($request) {
+                $orderQuery->where('waiter_id', (int) $request->integer('waiter_id'));
+            });
+        }
+
+        if ($period === 'today') {
+            $creditBillsQuery->whereBetween('issued_at', [now()->startOfDay(), now()->endOfDay()]);
+        } elseif ($period === 'this_week') {
+            $creditBillsQuery->whereBetween('issued_at', [now()->startOfWeek(), now()->endOfWeek()]);
+        } elseif ($period === 'this_month') {
+            $creditBillsQuery->whereBetween('issued_at', [now()->startOfMonth(), now()->endOfMonth()]);
+        } elseif ($period === 'this_year') {
+            $creditBillsQuery->whereBetween('issued_at', [now()->startOfYear(), now()->endOfYear()]);
+        } elseif ($period === 'custom') {
+            if ($request->filled('date_from')) {
+                $creditBillsQuery->where('issued_at', '>=', now()->parse($request->query('date_from'))->startOfDay());
+            }
+            if ($request->filled('date_to')) {
+                $creditBillsQuery->where('issued_at', '<=', now()->parse($request->query('date_to'))->endOfDay());
+            }
+        }
+
+        if ($request->filled('search')) {
+            $search = trim((string) $request->string('search'));
+            $creditBillsQuery->where(function ($billQuery) use ($search) {
+                $billQuery->where('bill_number', 'like', "%{$search}%")
+                    ->orWhereHas('order', function ($orderQuery) use ($search) {
+                        $orderQuery->where('order_number', 'like', "%{$search}%")
+                            ->orWhere('customer_name', 'like', "%{$search}%");
+                    })
+                    ->orWhereHas('order.items.menuItem', function ($menuQuery) use ($search) {
+                        $menuQuery->where('name', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        foreach ($creditBillsQuery->get() as $bill) {
+            $order = $bill->order;
+            if (! $order) {
+                continue;
+            }
+
+            $items = $order->items ?? collect();
+            $subtotal = (float) ($bill->subtotal ?? $order->subtotal ?? $items->sum(fn ($item) => (float) ($item->line_total ?? 0)));
+            $vatTotal = (float) ($bill->tax ?? $order->tax ?? 0);
+            $serviceTotal = (float) ($bill->service_charge ?? $order->service_charge ?? 0);
+
+            foreach ($items as $item) {
+                $lineTotal = (float) ($item->line_total ?? ((float) $item->quantity * (float) $item->unit_price));
+                $ratio = $subtotal > 0 ? $lineTotal / $subtotal : 0;
+                $vat = round($vatTotal * $ratio, 2);
+                $serviceCharge = round($serviceTotal * $ratio, 2);
+
+                $rows->push([
+                    'id' => 'credit-' . $bill->id . '-' . $item->id,
+                    'payment_id' => null,
+                    'bill_id' => $bill->id,
+                    'bill_number' => $bill->bill_number,
+                    'order_id' => $order->id,
+                    'order_number' => $order->order_number,
+                    'order_type' => $order->order_type,
+                    'table_number' => $order->table?->table_number,
+                    'customer_name' => $order->customer_name,
+                    'waiter_id' => $order->waiter_id,
+                    'waiter_name' => $order->waiter?->name,
+                    'cashier_id' => $bill->issued_by,
+                    'cashier_name' => $bill->issuer?->name,
+                    'cash_shift_id' => $bill->cash_shift_id,
+                    'item_id' => $item->id,
+                    'menu_item_id' => $item->menu_item_id,
+                    'item_name' => $item->menuItem?->name ?? 'Menu Item',
+                    'category_name' => $item->menuItem?->category?->name,
+                    'type' => $item->menuItem?->type ?? $item->station,
+                    'station' => $item->station,
+                    'quantity' => (float) $item->quantity,
+                    'unit_price' => (float) $item->unit_price,
+                    'line_total' => round($lineTotal, 2),
+                    'service_charge' => $serviceCharge,
+                    'vat' => $vat,
+                    'total' => round($lineTotal + $serviceCharge + $vat, 2),
+                    'payment_method' => 'credit',
+                    'payment_amount' => 0,
+                    'paid_at' => optional($bill->issued_at)->toDateTimeString(),
+                    'created_at' => optional($bill->created_at)->toDateTimeString(),
+                ]);
+            }
+        }
+
         $perPage = max(1, min((int) $request->query('per_page', 100), 500));
         $page = max(1, (int) $request->query('page', 1));
         $total = $rows->count();
@@ -241,8 +344,8 @@ class PaymentController extends Controller
         $this->authorize('create', Payment::class);
     
         $data = $request->validate([
-            'method' => 'nullable|in:cash,card,mobile,transfer',
-            'payment_method' => 'nullable|in:cash,card,mobile,transfer',
+            'method' => 'nullable|in:cash,card,mobile,transfer,bank',
+            'payment_method' => 'nullable|in:cash,card,mobile,transfer,bank',
             'amount' => 'required|numeric|min:0.01',
             'reference' => 'nullable|string|max:255',
             'reference_number' => 'nullable|string|max:255',
@@ -413,7 +516,7 @@ class PaymentController extends Controller
         $this->authorize('submitByWaiter', Payment::class);
         $data = $request->validate([
             'bill_id' => 'required|exists:bills,id',
-            'method' => 'required|in:cash,transfer',
+            'method' => 'required|in:cash,transfer,bank',
             'amount' => 'required|numeric|min:0.01',
             'reference' => 'nullable|string|max:255',
             'receipt' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:4096',
@@ -557,7 +660,7 @@ class PaymentController extends Controller
         $this->authorize('waiterReport', Payment::class);
         $user = $request->user();
         $q = Payment::query()->with(['bill.order.table', 'bill.order.items.menuItem', 'cashShift'])->where('received_by', $user->id)->whereIn('method', ['cash', 'transfer'])->orderByDesc('id');
-        if ($request->filled('method') && in_array($request->method, ['cash', 'transfer'])) $q->where('method', $request->method);
+        if ($request->filled('method') && in_array($request->method, ['cash', 'transfer', 'bank'])) $q->where('method', $request->method);
         if ($request->filled('status')) $q->where('status', $request->status);
         if ($request->filled('date_from')) $q->whereDate('created_at', '>=', $request->date_from);
         if ($request->filled('date_to')) $q->whereDate('created_at', '<=', $request->date_to);
@@ -585,7 +688,7 @@ class PaymentController extends Controller
         $baseSummary = Payment::query()->where('received_by', $user->id)->whereIn('method', ['cash', 'transfer']);
         if ($request->filled('date_from')) $baseSummary->whereDate('created_at', '>=', $request->date_from);
         if ($request->filled('date_to')) $baseSummary->whereDate('created_at', '<=', $request->date_to);
-        if ($request->filled('method') && in_array($request->method, ['cash', 'transfer'])) $baseSummary->where('method', $request->method);
+        if ($request->filled('method') && in_array($request->method, ['cash', 'transfer', 'bank'])) $baseSummary->where('method', $request->method);
         if ($request->filled('status')) $baseSummary->where('status', $request->status);
 
         $summary = [

@@ -55,7 +55,7 @@ class PurchaseOrderController extends Controller
         $now = now();
         $monthStart = $now->copy()->startOfMonth();
         $weekStart = $now->copy()->startOfWeek();
-        $validatedStatuses = ['fb_validated', 'food_validated'];
+        $validatedStatuses = ['food_validated', 'food_validated'];
 
         $base = PurchaseOrder::query();
 
@@ -129,7 +129,7 @@ class PurchaseOrderController extends Controller
                 ],
                 'status_distribution' => [
                     ['label' => 'Submitted', 'status' => 'submitted', 'value' => (int) ($statusCounts['submitted'] ?? 0)],
-                    ['label' => 'F&B Validated', 'status' => 'fb_validated', 'value' => $validatedTotal],
+                    ['label' => 'Food Controller Validated', 'status' => 'food_validated', 'value' => $validatedTotal],
                     ['label' => 'Approved', 'status' => 'approved', 'value' => (int) ($statusCounts['approved'] ?? 0)],
                     ['label' => 'Partially Received', 'status' => 'partially_received', 'value' => (int) ($statusCounts['partially_received'] ?? 0)],
                     ['label' => 'Completed', 'status' => 'completed', 'value' => (int) (($statusCounts['completed'] ?? 0) + ($statusCounts['received'] ?? 0))],
@@ -137,7 +137,7 @@ class PurchaseOrderController extends Controller
                 ],
                 'workflow' => [
                     ['label' => 'Submitted', 'value' => (int) ($statusCounts['submitted'] ?? 0)],
-                    ['label' => 'F&B Validated', 'value' => $validatedTotal],
+                    ['label' => 'Food Controller Validated', 'value' => $validatedTotal],
                     ['label' => 'Manager Approved', 'value' => (int) ($statusCounts['approved'] ?? 0)],
                     ['label' => 'Received', 'value' => (int) (($statusCounts['completed'] ?? 0) + ($statusCounts['received'] ?? 0) + ($statusCounts['partially_received'] ?? 0))],
                 ],
@@ -151,6 +151,33 @@ class PurchaseOrderController extends Controller
                     'rejected_requests' => (int) (($statusCounts['validation_rejected'] ?? 0) + ($statusCounts['cancelled'] ?? 0)),
                 ],
             ],
+            'meta' => null,
+        ]);
+    }
+
+    public function pendingValidation(Request $request)
+    {
+        $this->authorize('viewAny', PurchaseOrder::class);
+
+        $q = PurchaseOrder::query()
+            ->with(['supplier', 'items.inventoryItem', 'receivings'])
+            ->where('status', 'submitted')
+            ->orderBy('submitted_at', 'desc')
+            ->orderBy('id', 'desc');
+
+        if ($request->filled('search')) {
+            $search = trim((string) $request->search);
+            $q->where(function ($sub) use ($search) {
+                $sub->where('po_number', 'like', "%{$search}%")
+                    ->orWhere('notes', 'like', "%{$search}%")
+                    ->orWhereHas('supplier', fn ($supplier) => $supplier->where('name', 'like', "%{$search}%"));
+            });
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Pending purchase validation requests fetched successfully.',
+            'data' => $q->paginate((int) ($request->get('per_page', 20))),
             'meta' => null,
         ]);
     }
@@ -292,11 +319,11 @@ class PurchaseOrderController extends Controller
             $fromStatus = $po->status;
             $note = $data['note'] ?? 'F&B Controller validated recipe and inventory links';
 
-            $po->update(['status' => 'fb_validated']);
+            $po->update(['status' => 'food_validated']);
 
-            $this->recordStatusHistory($po, $fromStatus, 'fb_validated', $request->user()->id, $note);
-            $this->notificationService->notifyUsersByPermission('purchase_orders.approve', 'Purchase request validated', "Purchase order {$po->po_number} is ready for manager approval.", ['kind' => 'purchase_order_fb_validated', 'purchase_order_id' => $po->id]);
-            $this->auditLogger->log($request, $request->user()->id, 'PurchaseOrder', $po->id, 'purchase_order_fb_validated', $before, $po->fresh()->toArray(), 'Purchase order validated by F&B Controller.');
+            $this->recordStatusHistory($po, $fromStatus, 'food_validated', $request->user()->id, $note);
+            $this->notificationService->notifyUsersByPermission('purchase_orders.approve', 'Purchase request validated', "Purchase order {$po->po_number} is ready for manager approval.", ['kind' => 'purchase_order_food_validated', 'purchase_order_id' => $po->id]);
+            $this->auditLogger->log($request, $request->user()->id, 'PurchaseOrder', $po->id, 'purchase_order_food_validated', $before, $po->fresh()->toArray(), 'Purchase order validated by F&B Controller.');
 
             return response()->json(['success' => true, 'data' => $po->fresh()->load(['supplier', 'items.inventoryItem', 'receivings'])]);
         });
@@ -333,7 +360,7 @@ class PurchaseOrderController extends Controller
         return DB::transaction(function () use ($request, $id) {
             $po = PurchaseOrder::lockForUpdate()->findOrFail($id);
             $this->authorize('approve', $po);
-            if ($po->status !== 'fb_validated') {
+            if (! in_array($po->status, ['food_validated'], true)) {
                 return response()->json(['success' => false, 'message' => 'Only F&B validated purchase requests can be approved.'], 422);
             }
 

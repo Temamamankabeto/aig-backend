@@ -14,6 +14,7 @@ class Bill extends Model
         'subtotal', 'tax', 'service_charge', 'discount', 'total',
         'issued_by', 'issued_at',
         'paid_amount', 'balance', 'paid_at', 'due_date',
+        'customer_name', 'customer_tin', 'payment_method', 'cash_shift_id',
     ];
 
     protected $casts = [
@@ -33,4 +34,5 @@ class Bill extends Model
     public function issuer() { return $this->belongsTo(User::class, 'issued_by'); }
     public function payments() { return $this->hasMany(Payment::class, 'bill_id'); }
     public function creditOrder() { return $this->hasOne(CreditOrder::class, 'bill_id'); }
+    public function cashShift() { return $this->belongsTo(CashShift::class, 'cash_shift_id'); }
 }

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Services\InventoryDeductionService;
+use App\Models\CreditAgreement;
 use Illuminate\Database\Eloquent\Model;
 
 class Order extends Model
@@ -22,6 +23,12 @@ class Order extends Model
         'payment_type',
         'credit_status',
         'credit_account_id',
+        'credit_agreement_id',
+        'credit_order_mode',
+        'meal_type',
+        'number_of_person',
+        'customer_tin',
+        'bill_printed_at',
         'subtotal',
         'tax',
         'service_charge',
@@ -58,6 +65,9 @@ class Order extends Model
         'cancel_requested_at' => 'datetime',
         'voided_at' => 'datetime',
         'credit_account_id' => 'integer',
+        'credit_agreement_id' => 'integer',
+        'number_of_person' => 'integer',
+        'bill_printed_at' => 'datetime',
     ];
 
     protected static function booted(): void
@@ -83,5 +93,6 @@ class Order extends Model
     public function waiter() { return $this->belongsTo(User::class, 'waiter_id'); }
     public function bill() { return $this->hasOne(Bill::class, 'order_id'); }
     public function creditAccount() { return $this->belongsTo(CreditAccount::class, 'credit_account_id'); }
+    public function creditAgreement() { return $this->belongsTo(CreditAgreement::class, 'credit_agreement_id'); }
     public function creditOrder() { return $this->hasOne(CreditOrder::class, 'order_id'); }
 }

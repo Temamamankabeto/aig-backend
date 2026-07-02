@@ -49,16 +49,30 @@ class PublicAuthController extends Controller
     public function login(Request $request)
     {
         $validated = $request->validate([
-            'email' => 'required|email',
+            'login' => 'nullable|string|max:255',
+            'identifier' => 'nullable|string|max:255',
+            'email' => 'nullable|string|max:255',
             'password' => 'required|string',
         ]);
 
-        $user = User::where('email', $validated['email'])->first();
+        $login = trim((string) ($validated['login'] ?? $validated['identifier'] ?? $validated['email'] ?? ''));
+
+        if ($login === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Email or phone number is required.',
+            ], 422);
+        }
+
+        $user = User::query()
+            ->where('email', $login)
+            ->orWhere('phone', $login)
+            ->first();
 
         if (!$user || !Hash::check($validated['password'], $user->password)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Invalid credentials',
+                'message' => 'Invalid email/phone number or password.',
             ], 422);
         }
 

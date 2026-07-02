@@ -66,6 +66,7 @@ Route::middleware(['auth:sanctum'])->prefix('food-controller')->group(function (
     Route::patch('/suppliers/{id}', [SupplierController::class, 'update']);
 
     Route::get('/purchase-orders', [PurchaseOrderController::class, 'index']);
+    Route::get('/purchase-orders/pending-validation', [PurchaseOrderController::class, 'pendingValidation']);
     Route::get('/purchase-orders/{id}', [PurchaseOrderController::class, 'show']);
     Route::get('/purchase-orders/{id}/history', [PurchaseOrderController::class, 'history']);
     Route::post('/purchase-orders', [PurchaseOrderController::class, 'store']);

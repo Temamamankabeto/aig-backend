@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\BarTicket;
 use App\Models\Bill;
+use App\Models\CreditAgreement;
 use App\Models\DiningTable;
 use App\Models\KitchenTicket;
 use App\Models\MenuItem;
@@ -55,16 +56,37 @@ class WaiterOrderService
                     ];
                 }
 
-                if (empty($preparedItems)) throw new RuntimeException('At least one valid order item is required.');
+                $paymentType = (string) ($data['payment_type'] ?? 'regular');
+                $isCreditOrder = $paymentType === 'credit';
+                $creditOrderMode = (string) ($data['credit_order_mode'] ?? 'order_based');
+                $agreement = null;
+
+                if (empty($preparedItems)) {
+                    if (! $isCreditOrder || $creditOrderMode !== 'beef_based') {
+                        throw new RuntimeException('At least one valid order item is required.');
+                    }
+
+                    $agreement = CreditAgreement::query()
+                        ->where('id', (int) ($data['credit_agreement_id'] ?? 0))
+                        ->where('credit_account_id', (int) ($data['credit_account_id'] ?? 0))
+                        ->where('status', 'active')
+                        ->whereDate('start_date', '<=', now()->toDateString())
+                        ->whereDate('end_date', '>=', now()->toDateString())
+                        ->first();
+
+                    if (! $agreement) {
+                        throw new RuntimeException('Active credit agreement is required for beef-based credit orders.');
+                    }
+
+                    $persons = max(1, (int) ($data['number_of_person'] ?? $agreement->number_of_person ?? 1));
+                    $subtotal = round((float) $agreement->price_per_person * $persons, 2);
+                }
 
                 $subtotal = round($subtotal, 2);
                 $tax = round($subtotal * 0.10, 2);
                 $serviceCharge = round($subtotal * 0.05, 2);
                 $discount = max(0, round((float) ($data['discount'] ?? 0), 2));
                 $total = max(0, round(($subtotal + $tax + $serviceCharge) - $discount, 2));
-
-                $paymentType = (string) ($data['payment_type'] ?? 'regular');
-                $isCreditOrder = $paymentType === 'credit';
 
                 $orderType = (string) ($data['order_type'] ?? 'dine_in');
                 $tableId = $orderType === 'dine_in' ? (!empty($data['table_id']) ? (int) $data['table_id'] : null) : null;
@@ -75,11 +97,13 @@ class WaiterOrderService
                     DiningTable::query()->where('id', $tableId)->where('is_active', true)->lockForUpdate()->firstOrFail();
                 }
 
-                $orderStatus = 'confirmed';
-                $itemStatus = 'confirmed';
-                $ticketStatus = 'confirmed';
-                $billStatus = 'issued';
-                $issuedAt = now();
+                $isWaiterSubmittedCashOrder = (($data['_source'] ?? null) === 'waiter') && ! $isCreditOrder;
+
+                $orderStatus = $isWaiterSubmittedCashOrder ? 'submitted' : 'confirmed';
+                $itemStatus = $isWaiterSubmittedCashOrder ? 'pending' : 'confirmed';
+                $ticketStatus = $isWaiterSubmittedCashOrder ? 'pending' : 'confirmed';
+                $billStatus = 'draft';
+                $issuedAt = null;
 
                 $order = Order::create([
                     'order_number' => $orderNumber,
@@ -91,9 +115,14 @@ class WaiterOrderService
                     'customer_phone' => trim($data['customer_phone'] ?? '') ?: null,
                     'customer_address' => trim($data['customer_address'] ?? '') ?: null,
                     'status' => $orderStatus,
-                    'payment_type' => $isCreditOrder ? 'credit' : $paymentType,
+                    'payment_type' => $isCreditOrder ? 'credit' : ($isWaiterSubmittedCashOrder ? 'cash' : $paymentType),
                     'credit_status' => $isCreditOrder ? 'credit_approved' : null,
                     'credit_account_id' => $isCreditOrder ? (int) ($data['credit_account_id'] ?? 0) : null,
+                    'credit_agreement_id' => $isCreditOrder ? (int) ($data['credit_agreement_id'] ?? 0) : null,
+                    'credit_order_mode' => $isCreditOrder ? $creditOrderMode : null,
+                    'meal_type' => $isCreditOrder ? ($data['meal_type'] ?? $agreement?->meal_type ?? null) : null,
+                    'number_of_person' => $isCreditOrder ? ($data['number_of_person'] ?? $agreement?->number_of_person ?? null) : null,
+                    'customer_tin' => trim($data['customer_tin'] ?? '') ?: null,
                     'subtotal' => $subtotal,
                     'tax' => $tax,
                     'service_charge' => $serviceCharge,
@@ -125,27 +154,15 @@ class WaiterOrderService
                     'balance' => $total,
                     'status' => $billStatus,
                     'bill_type' => $isCreditOrder ? 'credit' : 'normal',
-                    'credit_status' => $isCreditOrder ? 'credit_approved' : null,
+                    'credit_status' => null,
                     'due_date' => null,
                     'issued_at' => $issuedAt,
                 ]);
 
-                if ($isCreditOrder) {
-                    $this->creditOrderService->createForBill(
-                        $bill,
-                        (int) $data['credit_account_id'],
-                        $authUserId,
-                        null,
-                        $data['credit_notes'] ?? null,
-                        false,
-                        !empty($data['credit_account_user_id']) ? (int) $data['credit_account_user_id'] : null
-                    );
-                }
 
                 if ($orderType === 'dine_in' && !empty($tableId)) DiningTable::where('id', $tableId)->update(['status' => 'occupied']);
 
                 $order->load('items.menuItem');
-                $this->inventoryDeductionService->deductForOrder($order, $authUserId);
 
                 return $order->load(['items.menuItem', 'creator', 'waiter', 'table', 'bill.creditOrder.account', 'creditOrder.account', 'creditOrder.authorizedUser']);
             });

@@ -158,6 +158,69 @@ class InventoryTransactionController extends Controller
     }
 
 
+    public function stockout(Request $request, $itemId)
+    {
+        $this->authorize('adjust', InventoryTransaction::class);
+        $data = $request->validate([
+            'quantity' => 'required|numeric|min:0.001',
+            'department' => 'required|string|max:120',
+            'reason' => 'required|string|max:255',
+        ]);
+
+        return DB::transaction(function () use ($request, $itemId, $data) {
+            $item = InventoryItem::query()->lockForUpdate()->findOrFail($itemId);
+            $before = $item->toArray();
+            $beforeQty = round((float) $item->current_stock, 3);
+            $qty = round((float) $data['quantity'], 3);
+
+            if ($beforeQty < $qty) {
+                return response()->json(['success' => false, 'message' => 'Insufficient stock for department stockout'], 422);
+            }
+
+            $item->current_stock = round($beforeQty - $qty, 3);
+            $item->save();
+
+            $remaining = $qty;
+            $batches = InventoryItemBatch::query()
+                ->where('inventory_item_id', $item->id)
+                ->where('remaining_qty', '>', 0)
+                ->orderByRaw('CASE WHEN expiry_date IS NULL THEN 1 ELSE 0 END')
+                ->orderBy('expiry_date')
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get();
+
+            foreach ($batches as $batch) {
+                if ($remaining <= 0) break;
+                $consume = min((float) $batch->remaining_qty, $remaining);
+                $batch->remaining_qty = round((float) $batch->remaining_qty - $consume, 3);
+                $batch->save();
+                $remaining = round($remaining - $consume, 3);
+            }
+
+            $note = trim('Department: ' . $data['department'] . ' - ' . $data['reason'] . ' [' . $qty . ' ' . $item->base_unit . ']');
+
+            $tx = InventoryTransaction::create([
+                'inventory_item_id' => $item->id,
+                'type' => 'out',
+                'quantity' => $qty,
+                'unit_cost' => $item->average_purchase_price,
+                'before_quantity' => $beforeQty,
+                'after_quantity' => (float) $item->current_stock,
+                'reference_type' => 'department_stockout',
+                'reference_id' => null,
+                'note' => $note,
+                'created_by' => $request->user()->id,
+            ]);
+
+            $this->auditLogger->log($request, $request->user()->id, 'InventoryTransaction', $tx->id, 'inventory_department_stockout', null, $tx->toArray(), 'Inventory item issued to department.');
+            $this->auditLogger->log($request, $request->user()->id, 'InventoryItem', $item->id, 'inventory_item_department_stockout', $before, $item->fresh()->toArray(), 'Inventory item quantity reduced for department stockout.');
+
+            return response()->json(['success' => true, 'message' => 'Department stockout recorded successfully.', 'data' => ['item' => $item->fresh(), 'tx' => $tx]]);
+        });
+    }
+
+
     public function transfer(Request $request, $itemId)
     {
         $this->authorize('adjust', InventoryTransaction::class);

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\CashShift;
 use App\Models\Payment;
+use App\Models\Bill;
 use Illuminate\Support\Facades\DB;
 
 class CashShiftService
@@ -73,7 +74,17 @@ class CashShiftService
         $cashPayments = (clone $payments)->where('method', 'cash')->sum('amount');
         $cardPayments = (clone $payments)->where('method', 'card')->sum('amount');
         $mobilePayments = (clone $payments)->where('method', 'mobile')->sum('amount');
-        $transferPayments = (clone $payments)->where('method', 'transfer')->sum('amount');
+        $transferPayments = (clone $payments)->whereIn('method', ['transfer', 'bank'])->sum('amount');
+        $creditAmount = Bill::where('cash_shift_id', $shift->id)
+            ->where(function ($query) {
+                $query->where('bill_type', 'credit')->orWhere('payment_method', 'credit');
+            })
+            ->sum('total');
+        $creditOrders = Bill::where('cash_shift_id', $shift->id)
+            ->where(function ($query) {
+                $query->where('bill_type', 'credit')->orWhere('payment_method', 'credit');
+            })
+            ->count();
     
         $totalPayments = $cashPayments + $cardPayments + $mobilePayments + $transferPayments;
     
@@ -111,7 +122,10 @@ class CashShiftService
             'card_payments' => round((float) $cardPayments, 2),
             'mobile_payments' => round((float) $mobilePayments, 2),
             'transfer_payments' => round((float) $transferPayments, 2),
+            'bank_payments' => round((float) $transferPayments, 2),
             'total_payments' => round((float) $totalPayments, 2),
+            'credit_orders' => (int) $creditOrders,
+            'credit_amount' => round((float) $creditAmount, 2),
     
             'opening_adjustments' => round((float) $openingAdjustments, 2),
             'cash_refunds' => round((float) $cashRefunds, 2),

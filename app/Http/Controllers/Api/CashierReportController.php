@@ -270,6 +270,96 @@ class CashierReportController extends Controller
         ]);
     }
 
+    private function buildShiftReport(CashShift $shift): array
+    {
+        $shift->loadMissing('cashier');
+        $summary = $this->cashShiftService->summary($shift);
+
+        $paymentBreakdown = Payment::query()
+            ->where('cash_shift_id', $shift->id)
+            ->where('status', 'paid')
+            ->select('method', DB::raw('COUNT(*) as transactions'), DB::raw('COALESCE(SUM(amount),0) as amount'))
+            ->groupBy('method')
+            ->get();
+
+        $grossSales = (float) ($summary['total_payments'] ?? 0) + (float) ($summary['credit_amount'] ?? 0);
+        $cashSales = (float) ($summary['cash_payments'] ?? 0);
+        $creditSales = (float) ($summary['credit_amount'] ?? 0);
+        $expectedCash = (float) ($summary['expected_cash'] ?? 0);
+        $actualCash = $shift->closing_cash !== null ? (float) $shift->closing_cash : null;
+
+        $orderIds = Bill::query()
+            ->where(function ($query) use ($shift) {
+                $query->where('cash_shift_id', $shift->id)
+                    ->orWhereHas('payments', fn ($payment) => $payment->where('cash_shift_id', $shift->id));
+            })
+            ->whereNotNull('order_id')
+            ->pluck('order_id')
+            ->unique()
+            ->values();
+
+        $totalOrders = $orderIds->count();
+        $voidedOrders = Order::whereIn('id', $orderIds)->whereIn('status', ['cancelled', 'void'])->count();
+
+        $billTotals = Bill::whereIn('order_id', $orderIds)
+            ->selectRaw('COALESCE(SUM(tax),0) as vat, COALESCE(SUM(service_charge),0) as service_charge, COALESCE(SUM(discount),0) as discounts')
+            ->first();
+
+        $categorySales = DB::table('order_items')
+            ->join('orders', 'orders.id', '=', 'order_items.order_id')
+            ->join('menu_items', 'menu_items.id', '=', 'order_items.menu_item_id')
+            ->leftJoin('menu_categories', 'menu_categories.id', '=', 'menu_items.category_id')
+            ->whereIn('orders.id', $orderIds)
+            ->selectRaw("COALESCE(menu_categories.name, 'Uncategorized') as category, COALESCE(SUM(order_items.line_total),0) as amount, COALESCE(SUM(order_items.quantity),0) as quantity")
+            ->groupBy('menu_categories.name')
+            ->orderByDesc('amount')
+            ->get();
+
+        $itemSales = DB::table('order_items')
+            ->join('orders', 'orders.id', '=', 'order_items.order_id')
+            ->join('menu_items', 'menu_items.id', '=', 'order_items.menu_item_id')
+            ->whereIn('orders.id', $orderIds)
+            ->selectRaw('menu_items.name as item_name, COALESCE(SUM(order_items.quantity),0) as quantity, COALESCE(SUM(order_items.line_total),0) as amount')
+            ->groupBy('menu_items.name')
+            ->orderByDesc('amount')
+            ->limit(100)
+            ->get();
+
+        return array_merge($shift->toArray(), [
+            'cashier' => $shift->cashier,
+            'cashier_name' => $shift->cashier?->name,
+            'branch' => config('app.name', 'Restaurant'),
+            'open_time' => $shift->opened_at,
+            'current_time' => now(),
+            'close_time' => $shift->closed_at,
+            'total_orders' => $totalOrders,
+            'voided_orders' => $voidedOrders,
+            'refunded_orders' => (int) ($summary['cash_refunds'] > 0 ? 1 : 0),
+            'discounts' => round((float) ($billTotals->discounts ?? 0), 2),
+            'vat' => round((float) ($billTotals->vat ?? 0), 2),
+            'service_charge' => round((float) ($billTotals->service_charge ?? 0), 2),
+            'cash_sales' => round($cashSales, 2),
+            'credit_sales' => round($creditSales, 2),
+            'card_sales' => round((float) ($summary['card_payments'] ?? 0), 2),
+            'mobile_money_sales' => round((float) ($summary['mobile_payments'] ?? 0), 2),
+            'bank_sales' => round((float) ($summary['bank_payments'] ?? $summary['transfer_payments'] ?? 0), 2),
+            'gross_sales' => round($grossSales, 2),
+            'net_sales' => round($grossSales - (float) ($billTotals->discounts ?? 0), 2),
+            'opening_cash' => round((float) $shift->opening_cash, 2),
+            'expected_cash' => round($expectedCash, 2),
+            'actual_cash' => $actualCash !== null ? round($actualCash, 2) : null,
+            'cash_difference' => $actualCash !== null ? round($actualCash - $expectedCash, 2) : null,
+            'drawer_cash' => round($expectedCash, 2),
+            'payment_method_breakdown' => $paymentBreakdown,
+            'category_sales' => $categorySales,
+            'item_sales' => $itemSales,
+            'summary' => array_merge($summary, [
+                'variance' => $actualCash !== null ? round($actualCash - $expectedCash, 2) : null,
+            ]),
+            'final_shift_status' => $shift->status,
+        ]);
+    }
+
     public function xReport(Request $request)
     {
         $this->authorize('current', CashShift::class);
@@ -278,7 +368,7 @@ class CashierReportController extends Controller
             ->with('cashier')
             ->when(
                 $request->filled('shift_id'),
-                fn ($q) => $q->where('id', $request->shift_id),
+                fn ($q) => $q->where('id', $request->shift_id)->where('status', 'open'),
                 fn ($q) => $q->where('cashier_id', $request->user()->id)
                     ->where('status', 'open')
                     ->latest('id')
@@ -288,13 +378,28 @@ class CashierReportController extends Controller
         if (! $shift) {
             return response()->json([
                 'success' => false,
-                'message' => 'No open shift found.',
+                'message' => 'No open shift found. X-Report is available only while a shift is open.',
             ], 404);
+        }
+
+        $report = $this->buildShiftReport($shift);
+
+        if (Schema::hasTable('cashier_shift_reports')) {
+            DB::table('cashier_shift_reports')->insert([
+                'cash_shift_id' => $shift->id,
+                'generated_by' => $request->user()->id,
+                'report_type' => 'x_report',
+                'payload' => json_encode($report),
+                'generated_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
         }
 
         return response()->json([
             'success' => true,
-            'data' => $this->cashShiftService->withSummary($shift),
+            'message' => 'X-Report generated. Totals were not reset.',
+            'data' => $report,
         ]);
     }
 
@@ -308,25 +413,44 @@ class CashierReportController extends Controller
             ->with('cashier')
             ->findOrFail($request->shift_id);
 
-        $summary = $this->cashShiftService->summary($shift);
+        $existing = null;
+        if ($shift->status === 'closed' && Schema::hasTable('cashier_shift_reports')) {
+            $existing = DB::table('cashier_shift_reports')
+                ->where('cash_shift_id', $shift->id)
+                ->where('report_type', 'z_report')
+                ->orderByDesc('id')
+                ->first();
+        }
 
-        $closingCash = (float) ($shift->closing_cash ?? 0);
-        $expectedCash = (float) ($summary['expected_cash'] ?? 0);
-        $variance = round($closingCash - $expectedCash, 2);
+        if ($existing) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Z-Report already generated for this closed shift.',
+                'data' => json_decode($existing->payload, true),
+            ]);
+        }
 
-        $data = array_merge(
-            $shift->toArray(),
-            [
-                'cashier' => $shift->cashier,
-                'summary' => array_merge($summary, [
-                    'variance' => $variance,
-                ]),
-            ]
-        );
+        $report = $this->buildShiftReport($shift);
+
+        if ($shift->status === 'closed' && Schema::hasTable('cashier_shift_reports')) {
+            DB::table('cashier_shift_reports')->insert([
+                'cash_shift_id' => $shift->id,
+                'generated_by' => $request->user()->id,
+                'report_type' => 'z_report',
+                'payload' => json_encode($report),
+                'generated_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
 
         return response()->json([
             'success' => true,
-            'data' => $data,
+            'message' => $shift->status === 'closed'
+                ? 'Z-Report generated for closed shift.'
+                : 'Z-Report preview generated. Close the shift to lock totals.',
+            'data' => $report,
         ]);
     }
+
 }

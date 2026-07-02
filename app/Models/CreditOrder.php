@@ -11,6 +11,7 @@ class CreditOrder extends Model
         'bill_id',
         'credit_account_id',
         'credit_account_user_id',
+        'credit_agreement_id',
         'used_by_name',
         'used_by_phone',
         'credit_reference',
@@ -34,6 +35,7 @@ class CreditOrder extends Model
 
     public function account() { return $this->belongsTo(CreditAccount::class, 'credit_account_id'); }
     public function authorizedUser() { return $this->belongsTo(CreditAccountUser::class, 'credit_account_user_id'); }
+    public function agreement() { return $this->belongsTo(CreditAgreement::class, 'credit_agreement_id'); }
     public function creditAccountUser() { return $this->belongsTo(CreditAccountUser::class, 'credit_account_user_id'); }
     public function authorizedUsers() { return $this->hasMany(CreditOrderAuthorizedUser::class); }
     public function order() { return $this->belongsTo(Order::class); }
