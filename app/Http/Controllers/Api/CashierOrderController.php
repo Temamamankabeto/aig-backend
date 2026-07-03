@@ -46,7 +46,7 @@ class CashierOrderController extends Controller
             'creator.roles',
             'waiter',
             'bill',
-            'items.menuItem',
+            'items.menuItem.category',
         ])
             ->where(function ($scope) use ($cashierId) {
                 $scope->where('created_by', $cashierId)
@@ -156,7 +156,7 @@ class CashierOrderController extends Controller
             'table',
             'creator',
             'waiter',
-            'items.menuItem',
+            'items.menuItem.category',
             'bill.payments',
         ])->findOrFail($id);
 
@@ -310,14 +310,14 @@ class CashierOrderController extends Controller
         $this->authorize('update', $order);
 
         return DB::transaction(function () use ($id) {
-            $order = Order::with(['items.menuItem', 'table', 'bill'])
+            $order = Order::with(['items.menuItem.category', 'table', 'bill'])
                 ->lockForUpdate()
                 ->findOrFail($id);
 
-            if ($order->status !== 'pending') {
+            if (! in_array($order->status, ['pending', 'submitted'], true)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Only pending orders can be confirmed.',
+                    'message' => 'Only submitted or pending orders can be confirmed.',
                 ], 422);
             }
 
@@ -363,7 +363,7 @@ class CashierOrderController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Cashier order confirmed successfully.',
-                'data' => $order->fresh(['items.menuItem', 'bill', 'table', 'waiter', 'creator']),
+                'data' => $order->fresh(['items.menuItem.category', 'bill', 'table', 'waiter', 'creator']),
             ]);
         });
     }
@@ -560,7 +560,7 @@ class CashierOrderController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Order item added successfully.',
-                'data' => $order->fresh(['items.menuItem', 'bill', 'table', 'waiter', 'creator']),
+                'data' => $order->fresh(['items.menuItem.category', 'bill', 'table', 'waiter', 'creator']),
             ]);
         });
     }
@@ -593,7 +593,7 @@ class CashierOrderController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Order item updated successfully.',
-                'data' => $order->fresh(['items.menuItem', 'bill', 'table', 'waiter', 'creator']),
+                'data' => $order->fresh(['items.menuItem.category', 'bill', 'table', 'waiter', 'creator']),
             ]);
         });
     }
@@ -618,14 +618,14 @@ class CashierOrderController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Order item removed successfully.',
-                'data' => $order->fresh(['items.menuItem', 'bill', 'table', 'waiter', 'creator']),
+                'data' => $order->fresh(['items.menuItem.category', 'bill', 'table', 'waiter', 'creator']),
             ]);
         });
     }
 
     public function printBill(Request $request, $id)
     {
-        $order = Order::with(['bill', 'items.menuItem', 'creditAgreement'])->findOrFail($id);
+        $order = Order::with(['bill', 'items.menuItem.category', 'creditAgreement'])->findOrFail($id);
         $this->authorize('update', $order);
 
         $data = $request->validate([
@@ -652,7 +652,7 @@ class CashierOrderController extends Controller
                 return response()->json([
                     'success' => true,
                     'message' => 'Bill was already printed.',
-                    'data' => $order->fresh(['items.menuItem', 'bill', 'creditOrder', 'creditAgreement']),
+                    'data' => $order->fresh(['items.menuItem.category', 'bill', 'creditOrder', 'creditAgreement']),
                 ]);
             }
 
@@ -728,7 +728,131 @@ class CashierOrderController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Bill printed and financial record created successfully.',
-                'data' => $order->fresh(['items.menuItem', 'bill.payments', 'creditOrder.account', 'creditAgreement', 'table', 'waiter', 'creator']),
+                'data' => $order->fresh(['items.menuItem.category', 'bill.payments', 'creditOrder.account', 'creditAgreement', 'table', 'waiter', 'creator']),
+            ]);
+        });
+    }
+
+
+    /**
+     * Receive payment directly against the order.
+     * The order remains the source of truth; this method does not create a bill.
+     * POST /cashier/orders/{id}/receive-payment
+     */
+    public function receivePayment(Request $request, $id)
+    {
+        $order = Order::with(['items.menuItem.category', 'table', 'waiter', 'creator', 'bill'])
+            ->findOrFail($id);
+        $this->authorize('update', $order);
+
+        $data = $request->validate([
+            'customer_name' => 'nullable|string|max:120',
+            'customer_tin' => 'nullable|string|max:80',
+            'payment_method' => 'nullable|in:cash,card,mobile,transfer,credit',
+            'paid_amount' => 'nullable|numeric|min:0',
+        ]);
+
+        return DB::transaction(function () use ($request, $order, $data) {
+            $order = Order::with(['items.menuItem.category', 'table', 'waiter', 'creator', 'bill'])
+                ->lockForUpdate()
+                ->findOrFail($order->id);
+
+            if (in_array((string) $order->status, ['cancelled', 'void'], true)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cancelled or voided orders cannot receive payment.',
+                ], 422);
+            }
+
+            if ((string) $order->status !== 'confirmed') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Only confirmed orders can receive payment. Please confirm submitted waiter orders first.',
+                ], 422);
+            }
+
+            if ((string) ($order->payment_status ?? 'unpaid') === 'paid' || $order->paid_at) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Order payment was already received.',
+                    'data' => $order->fresh(['items.menuItem.category', 'table', 'waiter', 'creator', 'bill']),
+                ]);
+            }
+
+            $shift = CashShift::where('cashier_id', $request->user()->id)
+                ->where('status', 'open')
+                ->lockForUpdate()
+                ->latest('id')
+                ->first();
+
+            if (! $shift) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Open shift is required before receiving order payment.',
+                ], 422);
+            }
+
+            $total = round((float) ($order->total ?? 0), 2);
+            $paidAmount = array_key_exists('paid_amount', $data)
+                ? round((float) $data['paid_amount'], 2)
+                : $total;
+
+            if ($paidAmount < $total) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Paid amount cannot be less than the order total.',
+                    'errors' => [
+                        'paid_amount' => ['Paid amount cannot be less than the order total.'],
+                    ],
+                ], 422);
+            }
+
+            $isCreditOrder = (string) $order->payment_type === 'credit';
+            $method = $isCreditOrder ? 'credit' : ($data['payment_method'] ?? $order->payment_method ?? 'cash');
+
+            if ($method === 'credit' && ! $isCreditOrder) {
+                $method = 'cash';
+            }
+
+            $customerName = trim((string) ($data['customer_name'] ?? $order->customer_name ?? 'Guest')) ?: 'Guest';
+            $customerTin = trim((string) ($data['customer_tin'] ?? $order->customer_tin ?? '')) ?: null;
+            $changeAmount = max(0, round($paidAmount - $total, 2));
+
+            $order->update([
+                'customer_name' => $customerName,
+                'customer_tin' => $customerTin,
+                'payment_method' => $method,
+                'payment_status' => 'paid',
+                'paid_amount' => $paidAmount,
+                'change_amount' => $changeAmount,
+                'paid_at' => now(),
+                'payment_received_by' => $request->user()->id,
+                'status' => 'completed',
+                'completed_at' => now(),
+                'credit_status' => $isCreditOrder ? 'paid' : $order->credit_status,
+            ]);
+
+            // Keep legacy bill data synchronized only when a bill already exists.
+            // The order remains the source of truth.
+            if ($order->bill) {
+                $order->bill->update([
+                    'customer_name' => $customerName,
+                    'customer_tin' => $customerTin,
+                    'paid_amount' => $total,
+                    'balance' => 0,
+                    'status' => 'paid',
+                    'paid_at' => now(),
+                    'payment_method' => $method,
+                    'cash_shift_id' => $shift->id,
+                ]);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => $isCreditOrder
+                    ? 'Credit order payment received successfully.'
+                    : 'Cash order payment received successfully.',
+                'data' => $order->fresh(['items.menuItem.category', 'table', 'waiter', 'creator', 'bill']),
             ]);
         });
     }

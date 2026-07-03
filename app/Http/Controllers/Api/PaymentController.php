@@ -82,36 +82,30 @@ class PaymentController extends Controller
     {
         $this->authorize('viewAny', Payment::class);
 
-        $query = Payment::query()
-            ->with([
-                'bill.order.items.menuItem.category',
-                'bill.order.waiter',
-                'bill.order.table',
-                'receiver',
-                'cashShift',
-            ])
-            ->where('status', 'paid')
-            ->where('received_by', $request->user()->id)
+        $query = Order::query()
+            ->with(['items.menuItem.category', 'waiter', 'table', 'creator'])
+            ->whereIn('payment_status', ['paid', 'credit_pending'])
             ->orderByDesc('paid_at')
+            ->orderByDesc('ordered_at')
             ->orderByDesc('id');
 
-        if ($request->filled('cash_shift_id')) {
-            $query->where('cash_shift_id', (int) $request->integer('cash_shift_id'));
-        }
-
-        if ($request->filled('method')) {
-            $query->where('method', (string) $request->string('method'));
-        }
-
-        if ($request->filled('waiter_id')) {
-            $query->whereHas('bill.order', function ($orderQuery) use ($request) {
-                $orderQuery->where('waiter_id', (int) $request->integer('waiter_id'));
+        if ($request->filled('method') && $request->query('method') !== 'all') {
+            $method = (string) $request->query('method');
+            $query->where(function ($q) use ($method) {
+                $q->where('payment_method', $method)->orWhere('payment_type', $method);
             });
         }
 
-        $period = (string) $request->query('period', 'today');
-        $dateColumn = 'paid_at';
+        if ($request->filled('payment_type') && $request->query('payment_type') !== 'all') {
+            $query->where('payment_type', (string) $request->query('payment_type'));
+        }
 
+        if ($request->filled('waiter_id')) {
+            $query->where('waiter_id', (int) $request->integer('waiter_id'));
+        }
+
+        $period = (string) $request->query('period', 'today');
+        $dateColumn = 'ordered_at';
         if ($period === 'today') {
             $query->whereBetween($dateColumn, [now()->startOfDay(), now()->endOfDay()]);
         } elseif ($period === 'this_week') {
@@ -131,36 +125,21 @@ class PaymentController extends Controller
 
         if ($request->filled('search')) {
             $search = trim((string) $request->string('search'));
-            $query->where(function ($paymentQuery) use ($search) {
-                $paymentQuery->where('reference', 'like', "%{$search}%")
-                    ->orWhereHas('bill', function ($billQuery) use ($search) {
-                        $billQuery->where('bill_number', 'like', "%{$search}%");
-                    })
-                    ->orWhereHas('bill.order', function ($orderQuery) use ($search) {
-                        $orderQuery->where('order_number', 'like', "%{$search}%")
-                            ->orWhere('customer_name', 'like', "%{$search}%");
-                    })
-                    ->orWhereHas('bill.order.items.menuItem', function ($menuQuery) use ($search) {
+            $query->where(function ($orderQuery) use ($search) {
+                $orderQuery->where('order_number', 'like', "%{$search}%")
+                    ->orWhere('customer_name', 'like', "%{$search}%")
+                    ->orWhereHas('items.menuItem', function ($menuQuery) use ($search) {
                         $menuQuery->where('name', 'like', "%{$search}%");
                     });
             });
         }
 
-        $payments = $query->get();
         $rows = collect();
-
-        foreach ($payments as $payment) {
-            $bill = $payment->bill;
-            $order = $bill?->order;
-
-            if (! $bill || ! $order) {
-                continue;
-            }
-
+        foreach ($query->get() as $order) {
             $items = $order->items ?? collect();
-            $subtotal = (float) ($bill->subtotal ?? $order->subtotal ?? $items->sum(fn ($item) => (float) ($item->line_total ?? 0)));
-            $vatTotal = (float) ($bill->tax ?? $order->tax ?? 0);
-            $serviceTotal = (float) ($bill->service_charge ?? $order->service_charge ?? 0);
+            $subtotal = (float) ($order->subtotal ?? $items->sum(fn ($item) => (float) ($item->line_total ?? 0)));
+            $vatTotal = (float) ($order->tax ?? 0);
+            $serviceTotal = (float) ($order->service_charge ?? 0);
 
             foreach ($items as $item) {
                 $lineTotal = (float) ($item->line_total ?? ((float) $item->quantity * (float) $item->unit_price));
@@ -169,113 +148,10 @@ class PaymentController extends Controller
                 $serviceCharge = round($serviceTotal * $ratio, 2);
 
                 $rows->push([
-                    'id' => $payment->id . '-' . $item->id,
-                    'payment_id' => $payment->id,
-                    'bill_id' => $bill->id,
-                    'bill_number' => $bill->bill_number,
-                    'order_id' => $order->id,
-                    'order_number' => $order->order_number,
-                    'order_type' => $order->order_type,
-                    'table_number' => $order->table?->table_number,
-                    'customer_name' => $order->customer_name,
-                    'waiter_id' => $order->waiter_id,
-                    'waiter_name' => $order->waiter?->name,
-                    'cashier_id' => $payment->received_by,
-                    'cashier_name' => $payment->receiver?->name,
-                    'cash_shift_id' => $payment->cash_shift_id,
-                    'item_id' => $item->id,
-                    'menu_item_id' => $item->menu_item_id,
-                    'item_name' => $item->menuItem?->name ?? 'Menu Item',
-                    'category_name' => $item->menuItem?->category?->name,
-                    'type' => $item->menuItem?->type ?? $item->station,
-                    'station' => $item->station,
-                    'quantity' => (float) $item->quantity,
-                    'unit_price' => (float) $item->unit_price,
-                    'line_total' => round($lineTotal, 2),
-                    'service_charge' => $serviceCharge,
-                    'vat' => $vat,
-                    'total' => round($lineTotal + $serviceCharge + $vat, 2),
-                    'payment_method' => $payment->method,
-                    'payment_amount' => (float) $payment->amount,
-                    'paid_at' => optional($payment->paid_at)->toDateTimeString(),
-                    'created_at' => optional($payment->created_at)->toDateTimeString(),
-                ]);
-            }
-        }
-
-        // Credit bills do not create cash payments, but they must still appear in cashier sold-items and shift reports.
-        $creditBillsQuery = Bill::query()
-            ->with(['order.items.menuItem.category', 'order.waiter', 'order.table', 'issuer'])
-            ->where(function ($billQuery) {
-                $billQuery->where('bill_type', 'credit')->orWhere('payment_method', 'credit');
-            })
-            ->where('issued_by', $request->user()->id)
-            ->orderByDesc('issued_at')
-            ->orderByDesc('id');
-
-        if ($request->filled('cash_shift_id')) {
-            $creditBillsQuery->where('cash_shift_id', (int) $request->integer('cash_shift_id'));
-        }
-
-        if ($request->filled('waiter_id')) {
-            $creditBillsQuery->whereHas('order', function ($orderQuery) use ($request) {
-                $orderQuery->where('waiter_id', (int) $request->integer('waiter_id'));
-            });
-        }
-
-        if ($period === 'today') {
-            $creditBillsQuery->whereBetween('issued_at', [now()->startOfDay(), now()->endOfDay()]);
-        } elseif ($period === 'this_week') {
-            $creditBillsQuery->whereBetween('issued_at', [now()->startOfWeek(), now()->endOfWeek()]);
-        } elseif ($period === 'this_month') {
-            $creditBillsQuery->whereBetween('issued_at', [now()->startOfMonth(), now()->endOfMonth()]);
-        } elseif ($period === 'this_year') {
-            $creditBillsQuery->whereBetween('issued_at', [now()->startOfYear(), now()->endOfYear()]);
-        } elseif ($period === 'custom') {
-            if ($request->filled('date_from')) {
-                $creditBillsQuery->where('issued_at', '>=', now()->parse($request->query('date_from'))->startOfDay());
-            }
-            if ($request->filled('date_to')) {
-                $creditBillsQuery->where('issued_at', '<=', now()->parse($request->query('date_to'))->endOfDay());
-            }
-        }
-
-        if ($request->filled('search')) {
-            $search = trim((string) $request->string('search'));
-            $creditBillsQuery->where(function ($billQuery) use ($search) {
-                $billQuery->where('bill_number', 'like', "%{$search}%")
-                    ->orWhereHas('order', function ($orderQuery) use ($search) {
-                        $orderQuery->where('order_number', 'like', "%{$search}%")
-                            ->orWhere('customer_name', 'like', "%{$search}%");
-                    })
-                    ->orWhereHas('order.items.menuItem', function ($menuQuery) use ($search) {
-                        $menuQuery->where('name', 'like', "%{$search}%");
-                    });
-            });
-        }
-
-        foreach ($creditBillsQuery->get() as $bill) {
-            $order = $bill->order;
-            if (! $order) {
-                continue;
-            }
-
-            $items = $order->items ?? collect();
-            $subtotal = (float) ($bill->subtotal ?? $order->subtotal ?? $items->sum(fn ($item) => (float) ($item->line_total ?? 0)));
-            $vatTotal = (float) ($bill->tax ?? $order->tax ?? 0);
-            $serviceTotal = (float) ($bill->service_charge ?? $order->service_charge ?? 0);
-
-            foreach ($items as $item) {
-                $lineTotal = (float) ($item->line_total ?? ((float) $item->quantity * (float) $item->unit_price));
-                $ratio = $subtotal > 0 ? $lineTotal / $subtotal : 0;
-                $vat = round($vatTotal * $ratio, 2);
-                $serviceCharge = round($serviceTotal * $ratio, 2);
-
-                $rows->push([
-                    'id' => 'credit-' . $bill->id . '-' . $item->id,
+                    'id' => $order->id . '-' . $item->id,
                     'payment_id' => null,
-                    'bill_id' => $bill->id,
-                    'bill_number' => $bill->bill_number,
+                    'bill_id' => null,
+                    'bill_number' => null,
                     'order_id' => $order->id,
                     'order_number' => $order->order_number,
                     'order_type' => $order->order_type,
@@ -283,9 +159,9 @@ class PaymentController extends Controller
                     'customer_name' => $order->customer_name,
                     'waiter_id' => $order->waiter_id,
                     'waiter_name' => $order->waiter?->name,
-                    'cashier_id' => $bill->issued_by,
-                    'cashier_name' => $bill->issuer?->name,
-                    'cash_shift_id' => $bill->cash_shift_id,
+                    'cashier_id' => $order->payment_received_by ?? $order->created_by,
+                    'cashier_name' => $order->creator?->name,
+                    'cash_shift_id' => null,
                     'item_id' => $item->id,
                     'menu_item_id' => $item->menu_item_id,
                     'item_name' => $item->menuItem?->name ?? 'Menu Item',
@@ -298,10 +174,11 @@ class PaymentController extends Controller
                     'service_charge' => $serviceCharge,
                     'vat' => $vat,
                     'total' => round($lineTotal + $serviceCharge + $vat, 2),
-                    'payment_method' => 'credit',
-                    'payment_amount' => 0,
-                    'paid_at' => optional($bill->issued_at)->toDateTimeString(),
-                    'created_at' => optional($bill->created_at)->toDateTimeString(),
+                    'payment_method' => $order->payment_type === 'credit' ? 'credit' : ($order->payment_method ?? $order->payment_type),
+                    'payment_status' => $order->payment_status,
+                    'payment_amount' => (float) ($order->paid_amount ?? 0),
+                    'paid_at' => optional($order->paid_at ?? $order->ordered_at)->toDateTimeString(),
+                    'created_at' => optional($order->created_at)->toDateTimeString(),
                 ]);
             }
         }

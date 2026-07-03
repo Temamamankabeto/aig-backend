@@ -275,54 +275,86 @@ class CashierReportController extends Controller
         $shift->loadMissing('cashier');
         $summary = $this->cashShiftService->summary($shift);
 
-        $paymentBreakdown = Payment::query()
-            ->where('cash_shift_id', $shift->id)
-            ->where('status', 'paid')
-            ->select('method', DB::raw('COUNT(*) as transactions'), DB::raw('COALESCE(SUM(amount),0) as amount'))
-            ->groupBy('method')
+        $shiftStart = $shift->opened_at;
+        $shiftEnd = $shift->closed_at ?? now();
+        $cashierId = (int) $shift->cashier_id;
+
+        $shiftOrdersQuery = Order::query()
+            ->whereNotIn('status', ['cancelled', 'void'])
+            ->where(function ($query) use ($shiftStart, $shiftEnd, $cashierId) {
+                $query->where(function ($paid) use ($shiftStart, $shiftEnd, $cashierId) {
+                    $paid->where('payment_status', 'paid')
+                        ->where('payment_received_by', $cashierId)
+                        ->whereBetween('paid_at', [$shiftStart, $shiftEnd]);
+                })->orWhere(function ($credit) use ($shiftStart, $shiftEnd, $cashierId) {
+                    $credit->where('payment_type', 'credit')
+                        ->whereIn('payment_status', ['credit_pending', 'paid'])
+                        ->where('created_by', $cashierId)
+                        ->whereBetween('ordered_at', [$shiftStart, $shiftEnd]);
+                });
+            });
+
+        $orderIds = (clone $shiftOrdersQuery)->pluck('id')->unique()->values();
+
+        $cashOrders = (clone $shiftOrdersQuery)
+            ->where('payment_type', '!=', 'credit')
+            ->where('payment_status', 'paid');
+
+        $creditOrders = (clone $shiftOrdersQuery)
+            ->where('payment_type', 'credit')
+            ->whereIn('payment_status', ['credit_pending', 'paid']);
+
+        $cashSales = round((float) $cashOrders->sum('total'), 2);
+        $creditSales = round((float) $creditOrders->sum('total'), 2);
+        $grossSales = round($cashSales + $creditSales, 2);
+
+        $discounts = round((float) (clone $shiftOrdersQuery)->sum('discount'), 2);
+        $vat = round((float) (clone $shiftOrdersQuery)->sum('tax'), 2);
+        $serviceCharge = round((float) (clone $shiftOrdersQuery)->sum('service_charge'), 2);
+        $expectedCash = round((float) $shift->opening_cash + $cashSales, 2);
+        $actualCash = $shift->closing_cash !== null ? round((float) $shift->closing_cash, 2) : null;
+
+        $paymentMethodExpression = "CASE WHEN payment_type = 'credit' THEN 'credit' ELSE COALESCE(NULLIF(payment_method, ''), 'cash') END";
+        $paymentBreakdown = (clone $shiftOrdersQuery)
+            ->selectRaw($paymentMethodExpression . ' as method')
+            ->selectRaw('COUNT(*) as transactions')
+            ->selectRaw('COALESCE(SUM(total),0) as amount')
+            ->groupByRaw($paymentMethodExpression)
+            ->orderByDesc('amount')
             ->get();
-
-        $grossSales = (float) ($summary['total_payments'] ?? 0) + (float) ($summary['credit_amount'] ?? 0);
-        $cashSales = (float) ($summary['cash_payments'] ?? 0);
-        $creditSales = (float) ($summary['credit_amount'] ?? 0);
-        $expectedCash = (float) ($summary['expected_cash'] ?? 0);
-        $actualCash = $shift->closing_cash !== null ? (float) $shift->closing_cash : null;
-
-        $orderIds = Bill::query()
-            ->where(function ($query) use ($shift) {
-                $query->where('cash_shift_id', $shift->id)
-                    ->orWhereHas('payments', fn ($payment) => $payment->where('cash_shift_id', $shift->id));
-            })
-            ->whereNotNull('order_id')
-            ->pluck('order_id')
-            ->unique()
-            ->values();
-
-        $totalOrders = $orderIds->count();
-        $voidedOrders = Order::whereIn('id', $orderIds)->whereIn('status', ['cancelled', 'void'])->count();
-
-        $billTotals = Bill::whereIn('order_id', $orderIds)
-            ->selectRaw('COALESCE(SUM(tax),0) as vat, COALESCE(SUM(service_charge),0) as service_charge, COALESCE(SUM(discount),0) as discounts')
-            ->first();
 
         $categorySales = DB::table('order_items')
             ->join('orders', 'orders.id', '=', 'order_items.order_id')
             ->join('menu_items', 'menu_items.id', '=', 'order_items.menu_item_id')
             ->leftJoin('menu_categories', 'menu_categories.id', '=', 'menu_items.category_id')
             ->whereIn('orders.id', $orderIds)
-            ->selectRaw("COALESCE(menu_categories.name, 'Uncategorized') as category, COALESCE(SUM(order_items.line_total),0) as amount, COALESCE(SUM(order_items.quantity),0) as quantity")
-            ->groupBy('menu_categories.name')
+            ->selectRaw("CASE WHEN orders.payment_type = 'credit' THEN 'credit' ELSE 'cash' END as payment_method")
+            ->selectRaw("COALESCE(menu_categories.name, 'Uncategorized') as category")
+            ->selectRaw("COALESCE(menu_categories.type, menu_items.type, 'food') as category_type")
+            ->selectRaw('COALESCE(SUM(order_items.quantity),0) as quantity')
+            ->selectRaw('COALESCE(SUM(order_items.line_total),0) as amount')
+            ->groupByRaw("CASE WHEN orders.payment_type = 'credit' THEN 'credit' ELSE 'cash' END")
+            ->groupBy('menu_categories.name', 'menu_categories.type', 'menu_items.type')
             ->orderByDesc('amount')
             ->get();
 
         $itemSales = DB::table('order_items')
             ->join('orders', 'orders.id', '=', 'order_items.order_id')
             ->join('menu_items', 'menu_items.id', '=', 'order_items.menu_item_id')
+            ->leftJoin('menu_categories', 'menu_categories.id', '=', 'menu_items.category_id')
             ->whereIn('orders.id', $orderIds)
-            ->selectRaw('menu_items.name as item_name, COALESCE(SUM(order_items.quantity),0) as quantity, COALESCE(SUM(order_items.line_total),0) as amount')
-            ->groupBy('menu_items.name')
-            ->orderByDesc('amount')
-            ->limit(100)
+            ->selectRaw('order_items.id as order_item_id')
+            ->selectRaw('orders.id as order_id')
+            ->selectRaw('orders.order_number as order_number')
+            ->selectRaw("CASE WHEN orders.payment_type = 'credit' THEN 'credit' ELSE 'cash' END as payment_method")
+            ->selectRaw("COALESCE(menu_categories.name, 'Uncategorized') as category")
+            ->selectRaw("COALESCE(menu_categories.type, menu_items.type, 'food') as category_type")
+            ->selectRaw('menu_items.name as item_name')
+            ->selectRaw('order_items.quantity as quantity')
+            ->selectRaw('order_items.line_total as amount')
+            ->selectRaw('order_items.created_at as created_at')
+            ->orderBy('orders.ordered_at')
+            ->orderBy('order_items.id')
             ->get();
 
         return array_merge($shift->toArray(), [
@@ -332,28 +364,32 @@ class CashierReportController extends Controller
             'open_time' => $shift->opened_at,
             'current_time' => now(),
             'close_time' => $shift->closed_at,
-            'total_orders' => $totalOrders,
-            'voided_orders' => $voidedOrders,
+            'total_orders' => $orderIds->count(),
+            'voided_orders' => 0,
             'refunded_orders' => (int) ($summary['cash_refunds'] > 0 ? 1 : 0),
-            'discounts' => round((float) ($billTotals->discounts ?? 0), 2),
-            'vat' => round((float) ($billTotals->vat ?? 0), 2),
-            'service_charge' => round((float) ($billTotals->service_charge ?? 0), 2),
-            'cash_sales' => round($cashSales, 2),
-            'credit_sales' => round($creditSales, 2),
-            'card_sales' => round((float) ($summary['card_payments'] ?? 0), 2),
-            'mobile_money_sales' => round((float) ($summary['mobile_payments'] ?? 0), 2),
-            'bank_sales' => round((float) ($summary['bank_payments'] ?? $summary['transfer_payments'] ?? 0), 2),
-            'gross_sales' => round($grossSales, 2),
-            'net_sales' => round($grossSales - (float) ($billTotals->discounts ?? 0), 2),
+            'discounts' => $discounts,
+            'vat' => $vat,
+            'service_charge' => $serviceCharge,
+            'cash_sales' => $cashSales,
+            'credit_sales' => $creditSales,
+            'gross_sales' => $grossSales,
+            'net_sales' => round($grossSales - $discounts, 2),
             'opening_cash' => round((float) $shift->opening_cash, 2),
-            'expected_cash' => round($expectedCash, 2),
-            'actual_cash' => $actualCash !== null ? round($actualCash, 2) : null,
+            'cash_received' => $cashSales,
+            'credit_payment_amount' => $creditSales,
+            'total_cash' => round((float) $shift->opening_cash + $cashSales, 2),
+            'expected_cash' => $expectedCash,
+            'actual_cash' => $actualCash,
             'cash_difference' => $actualCash !== null ? round($actualCash - $expectedCash, 2) : null,
-            'drawer_cash' => round($expectedCash, 2),
+            'drawer_cash' => $expectedCash,
             'payment_method_breakdown' => $paymentBreakdown,
             'category_sales' => $categorySales,
             'item_sales' => $itemSales,
             'summary' => array_merge($summary, [
+                'cash_payments' => $cashSales,
+                'credit_amount' => $creditSales,
+                'total_payments' => $cashSales,
+                'expected_cash' => $expectedCash,
                 'variance' => $actualCash !== null ? round($actualCash - $expectedCash, 2) : null,
             ]),
             'final_shift_status' => $shift->status,

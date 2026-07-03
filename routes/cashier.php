@@ -35,6 +35,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/cashier/orders/{id}/items', [CashierOrderController::class, 'addItem']);
     Route::put('/cashier/orders/{id}/items/{itemId}', [CashierOrderController::class, 'updateItem']);
     Route::delete('/cashier/orders/{id}/items/{itemId}', [CashierOrderController::class, 'removeItem']);
+    Route::post('/cashier/orders/{id}/receive-payment', [CashierOrderController::class, 'receivePayment']);
     Route::post('/cashier/orders/{id}/print-bill', [CashierOrderController::class, 'printBill']);
 
     /*

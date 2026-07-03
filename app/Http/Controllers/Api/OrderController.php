@@ -28,7 +28,7 @@ class OrderController extends Controller
     public function index(Request $request)
     {
         $this->authorize('viewAny', Order::class);
-        $query = Order::with(['creator', 'waiter', 'table', 'items.menuItem', 'bill.payments']);
+        $query = Order::with(['creator', 'waiter', 'table', 'items.menuItem.category', 'bill.payments']);
 
         // Filter by order type
         if ($request->filled('order_type')) {
@@ -99,7 +99,7 @@ class OrderController extends Controller
    'creator',
    'waiter',
    'table',
-   'items.menuItem',
+   'items.menuItem.category',
    'items.kitchenTicket',
    'items.barTicket',
    'bill.payments.receivedBy'
@@ -259,7 +259,7 @@ class OrderController extends Controller
             DB::commit();
 
             // Load relationships
-            $order->load(['items.menuItem', 'creator', 'waiter', 'table', 'bill']);
+            $order->load(['items.menuItem.category', 'creator', 'waiter', 'table', 'bill']);
 
             return response()->json([
                 'success' => true,
@@ -374,7 +374,7 @@ class OrderController extends Controller
                 $bill->save();
             }
 
-            return response()->json(['success' => true, 'data' => $order->fresh()->load(['items.menuItem', 'creator', 'waiter', 'table', 'bill'])]);
+            return response()->json(['success' => true, 'data' => $order->fresh()->load(['items.menuItem.category', 'creator', 'waiter', 'table', 'bill'])]);
         });
     }
 
@@ -597,10 +597,10 @@ class OrderController extends Controller
     {
         $order = Order::with('items')->findOrFail($id);
 
-        if ($order->status !== 'pending') {
+        if (! in_array($order->status, ['pending', 'submitted'], true)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only pending orders can be confirmed'
+                'message' => 'Only submitted or pending orders can be confirmed'
             ], 422);
         }
 
@@ -660,7 +660,7 @@ class OrderController extends Controller
 
             OrderItem::where('order_id', $order->id)->update(['item_status' => 'cancelled']);
 
-            return response()->json(['success' => true, 'data' => $order->fresh(['items.menuItem', 'bill'])]);
+            return response()->json(['success' => true, 'data' => $order->fresh(['items.menuItem.category', 'bill'])]);
         });
     }
 

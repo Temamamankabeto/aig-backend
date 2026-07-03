@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Models\BarTicket;
-use App\Models\Bill;
 use App\Models\CreditAgreement;
 use App\Models\DiningTable;
 use App\Models\KitchenTicket;
@@ -102,8 +101,7 @@ class WaiterOrderService
                 $orderStatus = $isWaiterSubmittedCashOrder ? 'submitted' : 'confirmed';
                 $itemStatus = $isWaiterSubmittedCashOrder ? 'pending' : 'confirmed';
                 $ticketStatus = $isWaiterSubmittedCashOrder ? 'pending' : 'confirmed';
-                $billStatus = 'draft';
-                $issuedAt = null;
+                $paymentStatus = $isCreditOrder ? 'credit_pending' : 'unpaid';
 
                 $order = Order::create([
                     'order_number' => $orderNumber,
@@ -116,7 +114,9 @@ class WaiterOrderService
                     'customer_address' => trim($data['customer_address'] ?? '') ?: null,
                     'status' => $orderStatus,
                     'payment_type' => $isCreditOrder ? 'credit' : ($isWaiterSubmittedCashOrder ? 'cash' : $paymentType),
-                    'credit_status' => $isCreditOrder ? 'credit_approved' : null,
+                    'payment_status' => $paymentStatus,
+                    'payment_method' => null,
+                    'credit_status' => $isCreditOrder ? 'credit_pending' : null,
                     'credit_account_id' => $isCreditOrder ? (int) ($data['credit_account_id'] ?? 0) : null,
                     'credit_agreement_id' => $isCreditOrder ? (int) ($data['credit_agreement_id'] ?? 0) : null,
                     'credit_order_mode' => $isCreditOrder ? $creditOrderMode : null,
@@ -142,29 +142,12 @@ class WaiterOrderService
                     ]);
                 }
 
-                $bill = Bill::create([
-                    'order_id' => $order->id,
-                    'bill_number' => 'BILL-' . $orderNumber,
-                    'subtotal' => $subtotal,
-                    'tax' => $tax,
-                    'service_charge' => $serviceCharge,
-                    'discount' => $discount,
-                    'total' => $total,
-                    'paid_amount' => 0,
-                    'balance' => $total,
-                    'status' => $billStatus,
-                    'bill_type' => $isCreditOrder ? 'credit' : 'normal',
-                    'credit_status' => null,
-                    'due_date' => null,
-                    'issued_at' => $issuedAt,
-                ]);
-
 
                 if ($orderType === 'dine_in' && !empty($tableId)) DiningTable::where('id', $tableId)->update(['status' => 'occupied']);
 
                 $order->load('items.menuItem');
 
-                return $order->load(['items.menuItem', 'creator', 'waiter', 'table', 'bill.creditOrder.account', 'creditOrder.account', 'creditOrder.authorizedUser']);
+                return $order->load(['items.menuItem', 'creator', 'waiter', 'table', 'creditOrder.account', 'creditOrder.authorizedUser']);
             });
         } catch (\Throwable $e) {
             Log::error('Order creation failed', ['message' => $e->getMessage(), 'trace' => $e->getTraceAsString(), 'user_id' => $authUserId, 'payload' => $data]);

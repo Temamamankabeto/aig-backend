@@ -70,7 +70,10 @@ class BarTicketController extends Controller
             $menuItem = $ticket->orderItem?->menuItem;
     
             return [
+                'id' => $ticket->id,
                 'bar_ticket_id' => $ticket->id,
+                'ticket_number' => 'BOT-' . str_pad((string) $ticket->id, 5, '0', STR_PAD_LEFT),
+                'status' => $ticket->status,
                 'ticket_status' => $ticket->status,
     
                 'order_id' => $ticket->orderItem?->order?->id,
@@ -84,6 +87,8 @@ class BarTicketController extends Controller
                 'quantity' => $ticket->orderItem?->quantity,
                 'order_item_status' => $ticket->orderItem?->item_status,
                 'note' => $ticket->orderItem?->notes,
+                'created_at' => $ticket->created_at,
+                'updated_at' => $ticket->updated_at,
     
                 'waiter_name' => $ticket->orderItem?->order?->waiter?->name,
                 'table_number' => $ticket->orderItem?->order?->table?->table_number
