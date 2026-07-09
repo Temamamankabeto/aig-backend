@@ -1,7 +1,6 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
-use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
@@ -10,10 +9,10 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // PostgreSQL encoding/collation is configured when the database is created.
-        // Keep only PostgreSQL-safe session settings.
-        DB::statement("SET standard_conforming_strings = on");
-        DB::statement("SET timezone = 'Africa/Addis_Ababa'");
+        // Session configuration (sql_mode, time_zone) is already handled by the
+        // 0000_00_00_000000_configure_innoDB_utf8mb4 migration. Nothing further
+        // needed here — utf8mb4 charset/collation is set at the table/column
+        // level in each table's own migration.
     }
 
     /**
@@ -21,6 +20,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        // No reversal needed for session configuration.
+        // No reversal needed.
     }
 };

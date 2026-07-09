@@ -48,9 +48,8 @@ return new class extends Migration {
         ) {
             DB::statement("
                 UPDATE recipe_items ri
-                SET base_unit = ii.base_unit
-                FROM inventory_items ii
-                WHERE ii.id = ri.inventory_item_id
+                JOIN inventory_items ii ON ii.id = ri.inventory_item_id
+                SET ri.base_unit = ii.base_unit
             ");
         }
 
@@ -67,9 +66,8 @@ return new class extends Migration {
         ) {
             DB::statement("
                 UPDATE purchase_order_items poi
-                SET base_unit = ii.base_unit
-                FROM inventory_items ii
-                WHERE ii.id = poi.inventory_item_id
+                JOIN inventory_items ii ON ii.id = poi.inventory_item_id
+                SET poi.base_unit = ii.base_unit
             ");
         }
 
@@ -86,15 +84,18 @@ return new class extends Migration {
         ) {
             DB::statement("
                 UPDATE stock_receiving_items sri
-                SET base_unit = ii.base_unit
-                FROM inventory_items ii
-                WHERE ii.id = sri.inventory_item_id
+                JOIN inventory_items ii ON ii.id = sri.inventory_item_id
+                SET sri.base_unit = ii.base_unit
             ");
         }
 
         foreach (['inventory_items', 'recipe_items', 'purchase_order_items', 'stock_receiving_items'] as $table) {
             if (Schema::hasTable($table) && Schema::hasColumn($table, 'base_unit')) {
-                DB::statement("ALTER TABLE {$table} DROP CONSTRAINT IF EXISTS {$table}_base_unit_check");
+                try {
+                    DB::statement("ALTER TABLE {$table} DROP CONSTRAINT {$table}_base_unit_check");
+                } catch (\Throwable $e) {
+                    // Constraint didn't exist — nothing to drop.
+                }
                 DB::statement("ALTER TABLE {$table} ADD CONSTRAINT {$table}_base_unit_check CHECK (base_unit IN ('g', 'ml', 'pc'))");
             }
         }
@@ -106,7 +107,11 @@ return new class extends Migration {
     {
         foreach (['stock_receiving_items', 'purchase_order_items', 'recipe_items', 'inventory_items'] as $table) {
             if (Schema::hasTable($table) && Schema::hasColumn($table, 'base_unit')) {
-                DB::statement("ALTER TABLE {$table} DROP CONSTRAINT IF EXISTS {$table}_base_unit_check");
+                try {
+                    DB::statement("ALTER TABLE {$table} DROP CONSTRAINT {$table}_base_unit_check");
+                } catch (\Throwable $e) {
+                    // Constraint didn't exist — nothing to drop.
+                }
 
                 Schema::table($table, function (Blueprint $t) {
                     $t->dropColumn('base_unit');

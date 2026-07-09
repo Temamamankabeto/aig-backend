@@ -31,7 +31,11 @@ return new class extends Migration {
                 END
         ");
 
-        DB::statement("ALTER TABLE menu_items DROP CONSTRAINT IF EXISTS menu_items_inventory_tracking_mode_check");
+        try {
+            DB::statement("ALTER TABLE menu_items DROP CONSTRAINT menu_items_inventory_tracking_mode_check");
+        } catch (\Throwable $e) {
+            // Constraint didn't exist — nothing to drop.
+        }
 
         DB::statement("
             ALTER TABLE menu_items

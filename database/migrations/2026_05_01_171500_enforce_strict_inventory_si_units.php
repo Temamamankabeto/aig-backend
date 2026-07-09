@@ -27,8 +27,6 @@ return new class extends Migration
             $table = $definition['table'];
             $column = $definition['column'];
 
-            DB::statement("ALTER TABLE {$table} ALTER COLUMN {$column} TYPE varchar(20)");
-
             DB::statement("UPDATE {$table} SET {$column} = 'kg' WHERE {$column} = 'g'");
             DB::statement("UPDATE {$table} SET {$column} = 'L' WHERE {$column} = 'ml'");
             DB::statement("UPDATE {$table} SET {$column} = 'pcs' WHERE {$column} = 'pc'");
@@ -36,18 +34,20 @@ return new class extends Migration
 
             if (!$definition['nullable']) {
                 DB::statement("UPDATE {$table} SET {$column} = '{$definition['default']}' WHERE {$column} IS NULL OR {$column} = ''");
-                DB::statement("ALTER TABLE {$table} ALTER COLUMN {$column} SET NOT NULL");
-            } else {
-                DB::statement("ALTER TABLE {$table} ALTER COLUMN {$column} DROP NOT NULL");
             }
 
-            if ($definition['default'] !== null) {
-                DB::statement("ALTER TABLE {$table} ALTER COLUMN {$column} SET DEFAULT '{$definition['default']}'");
-            } else {
-                DB::statement("ALTER TABLE {$table} ALTER COLUMN {$column} DROP DEFAULT");
-            }
+            // MySQL/MariaDB has no separate "ALTER COLUMN ... TYPE / SET NOT NULL / SET DEFAULT"
+            // statements — type, nullability, and default must all be redefined together in a
+            // single MODIFY COLUMN statement.
+            $nullClause = $definition['nullable'] ? 'NULL' : 'NOT NULL';
+            $defaultClause = $definition['default'] !== null ? " DEFAULT '{$definition['default']}'" : '';
+            DB::statement("ALTER TABLE {$table} MODIFY COLUMN {$column} VARCHAR(20) {$nullClause}{$defaultClause}");
 
-            DB::statement("ALTER TABLE {$table} DROP CONSTRAINT IF EXISTS {$table}_{$column}_check");
+            try {
+                DB::statement("ALTER TABLE {$table} DROP CONSTRAINT {$table}_{$column}_check");
+            } catch (\Throwable $e) {
+                // Constraint didn't exist — nothing to drop.
+            }
             DB::statement("ALTER TABLE {$table} ADD CONSTRAINT {$table}_{$column}_check CHECK ({$column} IN ('kg', 'L', 'pcs'))");
         }
     }
@@ -59,8 +59,12 @@ return new class extends Migration
                 continue;
             }
 
-            DB::statement("ALTER TABLE {$definition['table']} DROP CONSTRAINT IF EXISTS {$definition['table']}_{$definition['column']}_check");
-            DB::statement("ALTER TABLE {$definition['table']} ALTER COLUMN {$definition['column']} TYPE varchar(20)");
+            try {
+                DB::statement("ALTER TABLE {$definition['table']} DROP CONSTRAINT {$definition['table']}_{$definition['column']}_check");
+            } catch (\Throwable $e) {
+                // Constraint didn't exist — nothing to drop.
+            }
+            DB::statement("ALTER TABLE {$definition['table']} MODIFY COLUMN {$definition['column']} VARCHAR(20) NULL");
         }
     }
 };

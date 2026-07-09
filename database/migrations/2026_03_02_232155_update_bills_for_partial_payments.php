@@ -25,11 +25,14 @@ return new class extends Migration {
             });
         }
 
-        DB::statement("ALTER TABLE bills ALTER COLUMN status TYPE varchar(255)");
-        DB::statement("ALTER TABLE bills ALTER COLUMN status SET DEFAULT 'draft'");
-        DB::statement("ALTER TABLE bills ALTER COLUMN status SET NOT NULL");
+        DB::statement("ALTER TABLE bills MODIFY COLUMN status VARCHAR(255) NOT NULL DEFAULT 'draft'");
 
-        DB::statement("ALTER TABLE bills DROP CONSTRAINT IF EXISTS bills_status_check");
+        try {
+            DB::statement("ALTER TABLE bills DROP CONSTRAINT bills_status_check");
+        } catch (\Throwable $e) {
+            // Constraint didn't exist — nothing to drop.
+        }
+
         DB::statement("
             ALTER TABLE bills ADD CONSTRAINT bills_status_check
             CHECK (status IN ('draft', 'issued', 'partial', 'paid', 'void', 'refunded'))
@@ -37,9 +40,16 @@ return new class extends Migration {
 
         DB::statement("
             UPDATE bills b
-            SET paid_amount = COALESCE(p.paid_sum, 0),
-                balance = GREATEST(b.total - COALESCE(p.paid_sum, 0), 0),
-                status = CASE
+            JOIN (
+                SELECT bill_id, COALESCE(SUM(amount), 0) AS paid_sum
+                FROM payments
+                WHERE status = 'paid'
+                GROUP BY bill_id
+            ) p ON p.bill_id = b.id
+            SET
+                b.paid_amount = COALESCE(p.paid_sum, 0),
+                b.balance = GREATEST(b.total - COALESCE(p.paid_sum, 0), 0),
+                b.status = CASE
                     WHEN b.status = 'void' THEN 'void'
                     WHEN b.status = 'refunded' THEN 'refunded'
                     WHEN COALESCE(p.paid_sum, 0) >= b.total AND b.total > 0 THEN 'paid'
@@ -47,13 +57,6 @@ return new class extends Migration {
                     WHEN b.status IN ('draft', 'issued') THEN b.status
                     ELSE 'issued'
                 END
-            FROM (
-                SELECT bill_id, COALESCE(SUM(amount), 0) AS paid_sum
-                FROM payments
-                WHERE status = 'paid'
-                GROUP BY bill_id
-            ) p
-            WHERE p.bill_id = b.id
         ");
 
         DB::statement("
@@ -70,7 +73,13 @@ return new class extends Migration {
     public function down(): void
     {
         DB::statement("UPDATE bills SET status = 'void' WHERE status = 'refunded'");
-        DB::statement("ALTER TABLE bills DROP CONSTRAINT IF EXISTS bills_status_check");
+
+        try {
+            DB::statement("ALTER TABLE bills DROP CONSTRAINT bills_status_check");
+        } catch (\Throwable $e) {
+            // Constraint didn't exist — nothing to drop.
+        }
+
         DB::statement("
             ALTER TABLE bills ADD CONSTRAINT bills_status_check
             CHECK (status IN ('draft', 'issued', 'paid', 'partial', 'void'))

@@ -10,12 +10,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // PostgreSQL UTF-8 encoding is normally configured at database creation.
-        // This ensures standard string behavior for this session.
-        DB::statement("SET standard_conforming_strings = on");
+        // Ensure the connection uses InnoDB + utf8mb4 by default for this session.
+        DB::statement("SET SESSION sql_mode = 'STRICT_ALL_TABLES,NO_ENGINE_SUBSTITUTION'");
 
-        // Optional: set timezone for DB session
-        DB::statement("SET timezone = 'Africa/Addis_Ababa'");
+        // Set timezone for this DB session (Africa/Addis_Ababa is UTC+3, no DST)
+        DB::statement("SET time_zone = '+03:00'");
     }
 
     /**

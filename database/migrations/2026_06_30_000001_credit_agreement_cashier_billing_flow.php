@@ -17,9 +17,17 @@ return new class extends Migration
             });
 
             DB::statement("UPDATE credit_agreements SET agreement_type = 'order_based' WHERE agreement_type IS NULL OR agreement_type = ''");
-            DB::statement("ALTER TABLE credit_agreements DROP CONSTRAINT IF EXISTS credit_agreements_agreement_type_check");
+
+            try {
+                DB::statement("ALTER TABLE credit_agreements DROP CONSTRAINT credit_agreements_agreement_type_check");
+            } catch (\Throwable $e) {
+            }
             DB::statement("ALTER TABLE credit_agreements ADD CONSTRAINT credit_agreements_agreement_type_check CHECK (agreement_type IN ('beef_based', 'order_based'))");
-            DB::statement("ALTER TABLE credit_agreements DROP CONSTRAINT IF EXISTS credit_agreements_status_check");
+
+            try {
+                DB::statement("ALTER TABLE credit_agreements DROP CONSTRAINT credit_agreements_status_check");
+            } catch (\Throwable $e) {
+            }
             DB::statement("ALTER TABLE credit_agreements ADD CONSTRAINT credit_agreements_status_check CHECK (status IN ('draft', 'active', 'expired', 'suspended', 'completed', 'disabled'))");
         }
 
@@ -65,13 +73,20 @@ return new class extends Migration
                 }
             });
 
-            DB::statement("ALTER TABLE bills DROP CONSTRAINT IF EXISTS bills_status_check");
+            try {
+                DB::statement("ALTER TABLE bills DROP CONSTRAINT bills_status_check");
+            } catch (\Throwable $e) {
+            }
             DB::statement("ALTER TABLE bills ADD CONSTRAINT bills_status_check CHECK (status IN ('draft', 'issued', 'partial', 'paid', 'void', 'refunded', 'credit'))");
         }
 
         if (Schema::hasTable('payments')) {
-            DB::statement("ALTER TABLE payments ALTER COLUMN method TYPE varchar(40)");
-            DB::statement("ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_method_check");
+            DB::statement("ALTER TABLE payments MODIFY COLUMN method VARCHAR(40)");
+
+            try {
+                DB::statement("ALTER TABLE payments DROP CONSTRAINT payments_method_check");
+            } catch (\Throwable $e) {
+            }
             DB::statement("ALTER TABLE payments ADD CONSTRAINT payments_method_check CHECK (method IN ('cash', 'card', 'mobile', 'bank', 'transfer', 'credit'))");
         }
     }
@@ -79,10 +94,16 @@ return new class extends Migration
     public function down(): void
     {
         if (Schema::hasTable('payments')) {
-            DB::statement("ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_method_check");
+            try {
+                DB::statement("ALTER TABLE payments DROP CONSTRAINT payments_method_check");
+            } catch (\Throwable $e) {
+            }
         }
         if (Schema::hasTable('bills')) {
-            DB::statement("ALTER TABLE bills DROP CONSTRAINT IF EXISTS bills_status_check");
+            try {
+                DB::statement("ALTER TABLE bills DROP CONSTRAINT bills_status_check");
+            } catch (\Throwable $e) {
+            }
         }
     }
 };

@@ -6,11 +6,13 @@ use Illuminate\Support\Facades\DB;
 return new class extends Migration {
     public function up(): void
     {
-        DB::statement("ALTER TABLE orders ALTER COLUMN status TYPE varchar(50)");
-        DB::statement("ALTER TABLE orders ALTER COLUMN status SET DEFAULT 'pending'");
-        DB::statement("ALTER TABLE orders ALTER COLUMN status SET NOT NULL");
+        DB::statement("ALTER TABLE orders MODIFY COLUMN status VARCHAR(50) NOT NULL DEFAULT 'pending'");
 
-        DB::statement("ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check");
+        try {
+            DB::statement("ALTER TABLE orders DROP CONSTRAINT orders_status_check");
+        } catch (\Throwable $e) {
+            // Constraint didn't exist — nothing to drop.
+        }
 
         DB::statement("
             ALTER TABLE orders
@@ -34,7 +36,11 @@ return new class extends Migration {
     {
         DB::statement("UPDATE orders SET status = 'cancelled' WHERE status = 'cancel_requested'");
 
-        DB::statement("ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check");
+        try {
+            DB::statement("ALTER TABLE orders DROP CONSTRAINT orders_status_check");
+        } catch (\Throwable $e) {
+            // Constraint didn't exist — nothing to drop.
+        }
 
         DB::statement("
             ALTER TABLE orders
@@ -52,7 +58,6 @@ return new class extends Migration {
             ))
         ");
 
-        DB::statement("ALTER TABLE orders ALTER COLUMN status SET DEFAULT 'pending'");
-        DB::statement("ALTER TABLE orders ALTER COLUMN status SET NOT NULL");
+        DB::statement("ALTER TABLE orders MODIFY COLUMN status VARCHAR(50) NOT NULL DEFAULT 'pending'");
     }
 };

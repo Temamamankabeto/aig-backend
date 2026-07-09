@@ -50,7 +50,12 @@ return new class extends Migration
             });
 
             DB::statement("UPDATE credit_agreements SET agreement_type = 'order_based' WHERE agreement_type IS NULL OR agreement_type = ''");
-            DB::statement("ALTER TABLE credit_agreements DROP CONSTRAINT IF EXISTS credit_agreements_agreement_type_check");
+
+            try {
+                DB::statement("ALTER TABLE credit_agreements DROP CONSTRAINT credit_agreements_agreement_type_check");
+            } catch (\Throwable $e) {
+                // Constraint didn't exist — nothing to drop.
+            }
             DB::statement("ALTER TABLE credit_agreements ADD CONSTRAINT credit_agreements_agreement_type_check CHECK (agreement_type IN ('order_based', 'beef_based'))");
         }
     }
@@ -58,7 +63,11 @@ return new class extends Migration
     public function down(): void
     {
         if (Schema::hasTable('credit_agreements')) {
-            DB::statement("ALTER TABLE credit_agreements DROP CONSTRAINT IF EXISTS credit_agreements_agreement_type_check");
+            try {
+                DB::statement("ALTER TABLE credit_agreements DROP CONSTRAINT credit_agreements_agreement_type_check");
+            } catch (\Throwable $e) {
+                // Constraint didn't exist — nothing to drop.
+            }
         }
     }
 };

@@ -7,10 +7,13 @@ return new class extends Migration
 {
     public function up(): void
     {
-        DB::statement("ALTER TABLE purchase_orders ALTER COLUMN status TYPE varchar(50)");
-        DB::statement("ALTER TABLE purchase_orders ALTER COLUMN status SET DEFAULT 'draft'");
+        DB::statement("ALTER TABLE purchase_orders MODIFY COLUMN status VARCHAR(50) DEFAULT 'draft'");
 
-        DB::statement("ALTER TABLE purchase_orders DROP CONSTRAINT IF EXISTS purchase_orders_status_check");
+        try {
+            DB::statement("ALTER TABLE purchase_orders DROP CONSTRAINT purchase_orders_status_check");
+        } catch (\Throwable $e) {
+            // Constraint didn't exist — nothing to drop.
+        }
 
         DB::statement("
             ALTER TABLE purchase_orders
@@ -30,7 +33,11 @@ return new class extends Migration
 
     public function down(): void
     {
-        DB::statement("ALTER TABLE purchase_orders DROP CONSTRAINT IF EXISTS purchase_orders_status_check");
-        DB::statement("ALTER TABLE purchase_orders ALTER COLUMN status SET DEFAULT 'draft'");
+        try {
+            DB::statement("ALTER TABLE purchase_orders DROP CONSTRAINT purchase_orders_status_check");
+        } catch (\Throwable $e) {
+            // Constraint didn't exist — nothing to drop.
+        }
+        DB::statement("ALTER TABLE purchase_orders MODIFY COLUMN status VARCHAR(50) DEFAULT 'draft'");
     }
 };

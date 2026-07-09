@@ -12,12 +12,17 @@ return new class extends Migration
             return;
         }
 
-        DB::statement("ALTER TABLE order_items ALTER COLUMN item_status TYPE varchar(50)");
-        DB::statement("ALTER TABLE order_items ALTER COLUMN item_status SET DEFAULT 'pending'");
         DB::statement("UPDATE order_items SET item_status = 'pending' WHERE item_status IS NULL OR item_status = ''");
         DB::statement("UPDATE order_items SET item_status = 'pending' WHERE item_status NOT IN ('pending','confirmed','preparing','ready','served','completed','cancelled','rejected')");
 
-        DB::statement("ALTER TABLE order_items DROP CONSTRAINT IF EXISTS order_items_item_status_check");
+        DB::statement("ALTER TABLE order_items MODIFY COLUMN item_status VARCHAR(50) DEFAULT 'pending'");
+
+        try {
+            DB::statement("ALTER TABLE order_items DROP CONSTRAINT order_items_item_status_check");
+        } catch (\Throwable $e) {
+            // Constraint didn't exist — nothing to drop.
+        }
+
         DB::statement("
             ALTER TABLE order_items
             ADD CONSTRAINT order_items_item_status_check
@@ -41,7 +46,13 @@ return new class extends Migration
         }
 
         DB::statement("UPDATE order_items SET item_status = 'pending' WHERE item_status = 'confirmed'");
-        DB::statement("ALTER TABLE order_items DROP CONSTRAINT IF EXISTS order_items_item_status_check");
+
+        try {
+            DB::statement("ALTER TABLE order_items DROP CONSTRAINT order_items_item_status_check");
+        } catch (\Throwable $e) {
+            // Constraint didn't exist — nothing to drop.
+        }
+
         DB::statement("
             ALTER TABLE order_items
             ADD CONSTRAINT order_items_item_status_check

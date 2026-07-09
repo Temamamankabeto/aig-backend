@@ -12,10 +12,14 @@ return new class extends Migration
             return;
         }
 
-        DB::statement("ALTER TABLE orders ALTER COLUMN status TYPE varchar(50)");
-        DB::statement("ALTER TABLE orders ALTER COLUMN status SET DEFAULT 'pending'");
-        DB::statement("ALTER TABLE orders ALTER COLUMN status SET NOT NULL");
-        DB::statement("ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check");
+        DB::statement("ALTER TABLE orders MODIFY COLUMN status VARCHAR(50) NOT NULL DEFAULT 'pending'");
+
+        try {
+            DB::statement("ALTER TABLE orders DROP CONSTRAINT orders_status_check");
+        } catch (\Throwable $e) {
+            // Constraint didn't exist — nothing to drop.
+        }
+
         DB::statement("
             ALTER TABLE orders
             ADD CONSTRAINT orders_status_check
@@ -33,7 +37,7 @@ return new class extends Migration
                 'cancelled',
                 'void'
             ))
-        " );
+        ");
     }
 
     public function down(): void
@@ -43,7 +47,13 @@ return new class extends Migration
         }
 
         DB::statement("UPDATE orders SET status = 'pending' WHERE status = 'submitted'");
-        DB::statement("ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check");
+
+        try {
+            DB::statement("ALTER TABLE orders DROP CONSTRAINT orders_status_check");
+        } catch (\Throwable $e) {
+            // Constraint didn't exist — nothing to drop.
+        }
+
         DB::statement("
             ALTER TABLE orders
             ADD CONSTRAINT orders_status_check
@@ -59,6 +69,6 @@ return new class extends Migration
                 'cancel_requested',
                 'cancelled'
             ))
-        " );
+        ");
     }
 };

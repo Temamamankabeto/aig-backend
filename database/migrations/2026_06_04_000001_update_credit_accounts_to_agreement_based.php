@@ -51,7 +51,11 @@ return new class extends Migration
             });
         }
 
-        DB::statement("ALTER TABLE credit_agreements DROP CONSTRAINT IF EXISTS credit_agreements_status_check");
+        try {
+            DB::statement("ALTER TABLE credit_agreements DROP CONSTRAINT credit_agreements_status_check");
+        } catch (\Throwable $e) {
+            // Constraint didn't exist — nothing to drop.
+        }
         DB::statement("ALTER TABLE credit_agreements ADD CONSTRAINT credit_agreements_status_check CHECK (status IN ('active', 'disabled', 'expired'))");
     }
 

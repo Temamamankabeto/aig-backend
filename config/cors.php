@@ -12,14 +12,13 @@ return [
     |
     */
 
-    'paths' => ['api/*', 'sanctum/csrf-cookie'],
+   'paths' => ['api/*', 'auth/*', 'sanctum/csrf-cookie'],
 
     'allowed_methods' => ['*'], // Allow all HTTP methods (GET, POST, etc.)
 
     'allowed_origins' => [
         'http://localhost:3000',
         'http://127.0.0.1:3000',
-        'http://192.168.2.1:3000',
         'http://192.168.2.1:3000',
         'http://127.0.0.1:8000',
         'https://aigcafe.com',

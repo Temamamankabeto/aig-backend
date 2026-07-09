@@ -6,10 +6,13 @@ use Illuminate\Support\Facades\DB;
 return new class extends Migration {
     public function up(): void
     {
-        DB::statement("ALTER TABLE bar_tickets ALTER COLUMN status TYPE varchar(50)");
-        DB::statement("ALTER TABLE bar_tickets ALTER COLUMN status SET DEFAULT 'pending'");
+        DB::statement("ALTER TABLE bar_tickets MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
 
-        DB::statement("ALTER TABLE bar_tickets DROP CONSTRAINT IF EXISTS bar_tickets_status_check");
+        try {
+            DB::statement("ALTER TABLE bar_tickets DROP CONSTRAINT bar_tickets_status_check");
+        } catch (\Throwable $e) {
+            // Constraint didn't exist — nothing to drop.
+        }
 
         DB::statement("
             ALTER TABLE bar_tickets
@@ -30,7 +33,11 @@ return new class extends Migration {
     {
         DB::statement("UPDATE bar_tickets SET status = 'ready' WHERE status = 'served'");
 
-        DB::statement("ALTER TABLE bar_tickets DROP CONSTRAINT IF EXISTS bar_tickets_status_check");
+        try {
+            DB::statement("ALTER TABLE bar_tickets DROP CONSTRAINT bar_tickets_status_check");
+        } catch (\Throwable $e) {
+            // Constraint didn't exist — nothing to drop.
+        }
 
         DB::statement("
             ALTER TABLE bar_tickets
@@ -45,6 +52,6 @@ return new class extends Migration {
             ))
         ");
 
-        DB::statement("ALTER TABLE bar_tickets ALTER COLUMN status SET DEFAULT 'pending'");
+        DB::statement("ALTER TABLE bar_tickets MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
     }
 };
