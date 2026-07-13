@@ -17,6 +17,8 @@ return [
  'guard' => 'sanctum',
  'passwords' => 'users',
  ],
+
+ 
     /*
     |--------------------------------------------------------------------------
     | Authentication Guards
