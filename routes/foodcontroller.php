@@ -94,4 +94,5 @@ Route::middleware(['auth:sanctum'])->prefix('food-controller')->group(function (
     Route::get('/reports/expired-items', [InventoryReportController::class, 'expiredItems']);
     Route::get('/reports/receiving-history', [InventoryReportController::class, 'receivingHistory']);
     Route::get('/reports/stock-valuation', [InventoryReportController::class, 'stockValuation']);
+    Route::get('/reports/cash-sales', [FoodControllerController::class, 'cashSalesReport']);
 });

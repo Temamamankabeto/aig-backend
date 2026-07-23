@@ -15,6 +15,128 @@ use Illuminate\Support\Facades\Schema;
 
 class FoodControllerController extends Controller
 {
+    public function cashSalesReport(Request $request)
+    {
+        $validated = $request->validate([
+            'search' => ['nullable', 'string', 'max:100'],
+            'type' => ['nullable', 'in:all,food,drink'],
+            'category_id' => ['nullable', 'integer', 'exists:menu_categories,id'],
+            'period' => ['nullable', 'in:today,this_week,this_month,this_year,custom'],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:10', 'max:100'],
+        ]);
+
+        $period = $validated['period'] ?? 'today';
+        $dateColumn = 'orders.ordered_at';
+
+        $baseQuery = DB::table('order_items')
+            ->join('orders', 'orders.id', '=', 'order_items.order_id')
+            ->join('menu_items', 'menu_items.id', '=', 'order_items.menu_item_id')
+            ->leftJoin('menu_categories', 'menu_categories.id', '=', 'menu_items.category_id')
+            ->where('orders.payment_status', 'paid')
+            ->where(function ($query) {
+                $query->whereNull('orders.payment_type')
+                    ->orWhere('orders.payment_type', '<>', 'credit');
+            });
+
+        match ($period) {
+            'today' => $baseQuery->whereBetween($dateColumn, [now()->startOfDay(), now()->endOfDay()]),
+            'this_week' => $baseQuery->whereBetween($dateColumn, [now()->startOfWeek(), now()->endOfWeek()]),
+            'this_month' => $baseQuery->whereBetween($dateColumn, [now()->startOfMonth(), now()->endOfMonth()]),
+            'this_year' => $baseQuery->whereBetween($dateColumn, [now()->startOfYear(), now()->endOfYear()]),
+            'custom' => $baseQuery
+                ->when(
+                    $validated['date_from'] ?? null,
+                    fn ($query, $date) => $query->where($dateColumn, '>=', Carbon::parse($date)->startOfDay())
+                )
+                ->when(
+                    $validated['date_to'] ?? null,
+                    fn ($query, $date) => $query->where($dateColumn, '<=', Carbon::parse($date)->endOfDay())
+                ),
+        };
+
+        if (! empty($validated['search'])) {
+            $search = trim($validated['search']);
+            $baseQuery->where(function ($query) use ($search) {
+                $query->where('menu_items.name', 'like', "%{$search}%")
+                    ->orWhere('menu_categories.name', 'like', "%{$search}%");
+            });
+        }
+
+        if (! empty($validated['type']) && $validated['type'] !== 'all') {
+            $baseQuery->where('menu_items.type', $validated['type']);
+        }
+
+        if (! empty($validated['category_id'])) {
+            $baseQuery->where('menu_items.category_id', $validated['category_id']);
+        }
+
+        $summary = [
+            'distinct_items' => (int) (clone $baseQuery)
+                ->distinct()
+                ->count('order_items.menu_item_id'),
+            'total_orders' => (int) (clone $baseQuery)
+                ->distinct()
+                ->count('order_items.order_id'),
+            'total_quantity' => round((float) (clone $baseQuery)->sum('order_items.quantity'), 2),
+            'total_sales' => round((float) (clone $baseQuery)
+                ->sum(DB::raw('order_items.quantity * order_items.unit_price')), 2),
+        ];
+
+        $rows = (clone $baseQuery)
+            ->select([
+                'order_items.menu_item_id',
+                'menu_items.name as item_name',
+                'menu_items.type',
+                'menu_categories.name as category_name',
+            ])
+            ->selectRaw('COUNT(DISTINCT order_items.order_id) as total_orders')
+            ->selectRaw('SUM(order_items.quantity) as total_quantity')
+            ->selectRaw('SUM(order_items.quantity * order_items.unit_price) as total_sales')
+            ->groupBy(
+                'order_items.menu_item_id',
+                'menu_items.name',
+                'menu_items.type',
+                'menu_categories.name'
+            )
+            ->orderByDesc('total_sales')
+            ->get()
+            ->map(function ($row) {
+                $quantity = (float) $row->total_quantity;
+                $sales = (float) $row->total_sales;
+
+                return [
+                    'menu_item_id' => (int) $row->menu_item_id,
+                    'item_name' => $row->item_name,
+                    'category_name' => $row->category_name,
+                    'type' => $row->type,
+                    'total_orders' => (int) $row->total_orders,
+                    'total_quantity' => round($quantity, 2),
+                    'average_unit_price' => round($quantity > 0 ? $sales / $quantity : 0, 2),
+                    'total_sales' => round($sales, 2),
+                ];
+            });
+
+        $page = (int) ($validated['page'] ?? 1);
+        $perPage = (int) ($validated['per_page'] ?? 25);
+        $total = $rows->count();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Filtered cash sales loaded successfully.',
+            'data' => $rows->forPage($page, $perPage)->values(),
+            'meta' => [
+                'current_page' => $page,
+                'last_page' => max(1, (int) ceil($total / $perPage)),
+                'per_page' => $perPage,
+                'total' => $total,
+                'summary' => $summary,
+            ],
+        ]);
+    }
+
     public function dashboard(Request $request)
     {
         $today = now()->startOfDay();
