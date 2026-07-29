@@ -183,6 +183,10 @@ class CashierOrderController extends Controller
             $query->where('type', $request->type);
         }
 
+        if ($request->filled('category_id')) {
+            $query->where('category_id', $request->category_id);
+        }
+
         if ($request->filled('search')) {
             $search = trim((string) $request->search);
 
@@ -202,11 +206,17 @@ class CashierOrderController extends Controller
             ->map(function ($item) {
                 return [
                     'id' => $item->id,
+                    'category_id' => $item->category_id,
+                    'menu_category_id' => $item->category_id,
                     'name' => $item->name,
                     'type' => $item->type,
                     'price' => (float) $item->price,
                     'description' => $item->description,
                     'category' => optional($item->category)->name,
+                    'menu_category' => $item->category ? [
+                        'id' => $item->category->id,
+                        'name' => $item->category->name,
+                    ] : null,
                     'image_url' => $item->image
                         ? url('storage/' . $item->image)
                         : ($item->image_url ?? null),

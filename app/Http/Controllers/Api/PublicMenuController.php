@@ -16,7 +16,7 @@ class PublicMenuController extends Controller
     public function index(Request $request): JsonResponse
     {
         $query = MenuItem::with('category')
-            ->where('is_active', true);
+            ->where('is_active', true)
             ->where('is_available', true);
 
         // Filter by type if provided

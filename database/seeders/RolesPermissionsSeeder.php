@@ -17,6 +17,7 @@ class RolesPermissionsSeeder extends Seeder
 
         $permissions = [
             'auth.me',
+            'cashier.dashboard',
 
             'users.read', 'users.create', 'users.update', 'users.disable', 'users.delete',
             'roles.read', 'roles.assign',
@@ -152,6 +153,7 @@ class RolesPermissionsSeeder extends Seeder
 
             'Cashier' => [
                 'auth.me',
+                'cashier.dashboard',
 
                 'users.read', // REQUIRED FOR /cashier/waiters-lite
 

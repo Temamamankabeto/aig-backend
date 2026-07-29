@@ -3,6 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Bill;
+use App\Models\CashShift;
+use App\Models\Order;
+use App\Models\Payment;
+use App\Services\CashShiftService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 
@@ -30,14 +35,114 @@ class DashboardController extends Controller
         ]);
     }
 
-    public function cashierDashboard(Request $request)
+    public function cashierDashboard(
+        Request $request,
+        CashShiftService $cashShiftService
+    )
     {
         Gate::authorize('cashier.dashboard');
+
+        $cashierId = (int) $request->user()->id;
+        $today = now()->toDateString();
+
+        $currentShift = CashShift::query()
+            ->where('cashier_id', $cashierId)
+            ->where('status', 'open')
+            ->latest('id')
+            ->first();
+
+        $todayOrders = Order::query()
+            ->where('created_by', $cashierId)
+            ->whereDate('ordered_at', $today)
+            ->whereNotIn('status', ['cancelled', 'void']);
+
+        $todayPayments = Payment::query()
+            ->where('received_by', $cashierId)
+            ->where('status', 'paid')
+            ->whereDate('paid_at', $today);
+
+        $paymentMethods = (clone $todayPayments)
+            ->select('method')
+            ->selectRaw('COUNT(*) as transactions')
+            ->selectRaw('COALESCE(SUM(amount), 0) as amount')
+            ->groupBy('method')
+            ->orderByDesc('amount')
+            ->get()
+            ->groupBy(fn ($row) => trim((string) $row->method) !== ''
+                ? (string) $row->method
+                : 'cash')
+            ->map(fn ($rows, $method) => [
+                'method' => (string) $method,
+                'transactions' => (int) $rows->sum('transactions'),
+                'amount' => round((float) $rows->sum('amount'), 2),
+            ])
+            ->sortByDesc('amount')
+            ->values();
+
+        $orderStatuses = (clone $todayOrders)
+            ->selectRaw('status, COUNT(*) as total')
+            ->groupBy('status')
+            ->get()
+            ->mapWithKeys(fn ($row) => [(string) $row->status => (int) $row->total]);
+
+        $pendingBills = Bill::query()
+            ->whereIn('status', ['issued', 'partial']);
+
+        $recentOrders = Order::query()
+            ->with([
+                'table:id,table_number',
+                'waiter:id,name',
+                'bill:id,order_id,status,balance',
+            ])
+            ->where('created_by', $cashierId)
+            ->latest('id')
+            ->limit(8)
+            ->get()
+            ->map(fn (Order $order) => [
+                'id' => $order->id,
+                'order_number' => $order->order_number,
+                'order_type' => $order->order_type,
+                'table' => $order->table?->table_number,
+                'waiter' => $order->waiter?->name,
+                'status' => $order->status,
+                'payment_type' => $order->payment_type,
+                'payment_status' => $order->payment_status,
+                'total' => round((float) $order->total, 2),
+                'ordered_at' => $order->ordered_at ?? $order->created_at,
+                'bill_id' => $order->bill?->id,
+                'bill_status' => $order->bill?->status,
+                'balance' => round((float) ($order->bill?->balance ?? 0), 2),
+            ])
+            ->values();
+
         return response()->json([
             "success" => true,
+            "message" => "Cashier dashboard loaded successfully",
             "role" => "cashier",
-            "message" => "Cashier Dashboard",
-            "user" => $request->user()
+            "data" => [
+                'business_date' => $today,
+                'user' => [
+                    'id' => $request->user()->id,
+                    'name' => $request->user()->name,
+                ],
+                'current_shift' => $currentShift
+                    ? $cashShiftService->withSummary($currentShift)
+                    : null,
+                'summary' => [
+                    'orders' => (int) (clone $todayOrders)->count(),
+                    'gross_order_value' => round((float) (clone $todayOrders)->sum('total'), 2),
+                    'payments_collected' => round((float) (clone $todayPayments)->sum('amount'), 2),
+                    'paid_transactions' => (int) (clone $todayPayments)->count(),
+                    'cash_collected' => round((float) (clone $todayPayments)->where('method', 'cash')->sum('amount'), 2),
+                    'credit_orders' => (int) (clone $todayOrders)->where('payment_type', 'credit')->count(),
+                    'pending_bills' => (int) (clone $pendingBills)->count(),
+                    'pending_amount' => round((float) (clone $pendingBills)->sum('balance'), 2),
+                ],
+                'order_statuses' => $orderStatuses,
+                'payment_methods' => $paymentMethods,
+                'recent_orders' => $recentOrders,
+            ],
+            "meta" => null,
         ]);
     }
 
