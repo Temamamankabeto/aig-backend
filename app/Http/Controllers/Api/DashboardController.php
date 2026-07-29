@@ -86,6 +86,7 @@ class DashboardController extends Controller
             ->mapWithKeys(fn ($row) => [(string) $row->status => (int) $row->total]);
 
         $pendingBills = Bill::query()
+            ->where('issued_by', $cashierId)
             ->whereIn('status', ['issued', 'partial']);
 
         $recentOrders = Order::query()
