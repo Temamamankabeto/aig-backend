@@ -106,4 +106,4 @@ jobs:
 
             php artisan up
 
-            echo "Laravel backend deployed successfully"
+            echo "Laravel backend deployed correctly"
