@@ -50,7 +50,7 @@ class ReportController extends Controller
     {
         $data = $request->validate([
             'date_from' => 'nullable|date',
-            'date_to' => 'nullable|date',
+            'date_to' => 'nullable|date|after_or_equal:date_from',
             'limit' => 'nullable|integer|min:1|max:100',
             'sort' => 'nullable|in:qty,revenue',
         ]);
@@ -86,7 +86,7 @@ class ReportController extends Controller
     {
         $data = $request->validate([
             'date_from' => 'nullable|date',
-            'date_to' => 'nullable|date',
+            'date_to' => 'nullable|date|after_or_equal:date_from',
         ]);
 
         $q = DB::table('kitchen_tickets')
@@ -96,10 +96,11 @@ class ReportController extends Controller
         if (!empty($data['date_from'])) $q->whereDate('created_at', '>=', $data['date_from']);
         if (!empty($data['date_to'])) $q->whereDate('created_at', '<=', $data['date_to']);
 
-        $summary = $q->selectRaw("
-                COUNT(*) as tickets_completed,
-                AVG(TIMESTAMPDIFF(SECOND, started_at, completed_at)) as avg_prep_seconds
-            ")
+        $secondsExpression = DB::connection()->getDriverName() === 'pgsql'
+            ? 'EXTRACT(EPOCH FROM (completed_at - started_at))'
+            : 'TIMESTAMPDIFF(SECOND, started_at, completed_at)';
+
+        $summary = $q->selectRaw("COUNT(*) as tickets_completed, AVG({$secondsExpression}) as avg_prep_seconds")
             ->first();
 
         $byStatus = DB::table('kitchen_tickets')
@@ -122,13 +123,19 @@ class ReportController extends Controller
     {
         $data = $request->validate([
             'date_from' => 'nullable|date',
-            'date_to' => 'nullable|date',
+            'date_to' => 'nullable|date|after_or_equal:date_from',
             'type' => 'nullable|in:out,waste',
         ]);
 
         $q = DB::table('inventory_transactions as it')
             ->join('inventory_items as ii', 'ii.id', '=', 'it.inventory_item_id')
-            ->whereIn('it.type', $data['type'] ? [$data['type']] : ['out','waste']);
+            ->where('it.type', 'out');
+
+        if (($data['type'] ?? null) === 'waste') {
+            $q->where('it.reference_type', 'waste');
+        } elseif (($data['type'] ?? null) === 'out') {
+            $q->where('it.reference_type', '!=', 'waste');
+        }
 
         if (!empty($data['date_from'])) $q->whereDate('it.created_at', '>=', $data['date_from']);
         if (!empty($data['date_to'])) $q->whereDate('it.created_at', '<=', $data['date_to']);
@@ -152,7 +159,7 @@ class ReportController extends Controller
     {
         $data = $request->validate([
             'date_from' => 'nullable|date',
-            'date_to' => 'nullable|date',
+            'date_to' => 'nullable|date|after_or_equal:date_from',
         ]);
 
         $q = DB::table('cash_shifts as cs')

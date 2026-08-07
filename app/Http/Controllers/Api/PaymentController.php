@@ -12,6 +12,7 @@ use App\Services\NotificationService;
 use App\Services\OrderSettlementService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class PaymentController extends Controller
 {
@@ -226,7 +227,7 @@ class PaymentController extends Controller
             'amount' => 'required|numeric|min:0.01',
             'reference' => 'nullable|string|max:255',
             'reference_number' => 'nullable|string|max:255',
-            'paid_at' => 'nullable|date',
+            'paid_at' => 'nullable|date|before_or_equal:now',
             'cash_shift_id' => 'nullable|exists:cash_shifts,id',
             'screenshot_path' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:4096',
         ]);
@@ -247,10 +248,7 @@ class PaymentController extends Controller
                 ->findOrFail($billId);
     
             if ($bill->status === 'void') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Bill is void',
-                ], 422);
+                throw ValidationException::withMessages(['bill' => 'A void bill cannot receive payment.']);
             }
     
             $isCashierPayment = $request->is('api/cashier/bills/*/payments') || $request->is('cashier/bills/*/payments');
@@ -266,29 +264,36 @@ class PaymentController extends Controller
                         ->first();
 
                 if (! $shift || $shift->status !== 'open') {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'An open cashier shift is required before recording payments',
-                    ], 422);
+                    throw ValidationException::withMessages(['cash_shift_id' => 'An open cashier shift is required before recording payments.']);
                 }
 
                 if ((int) $shift->cashier_id !== (int) $request->user()->id) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'You can only record payments on your own open shift',
-                    ], 422);
+                    throw ValidationException::withMessages(['cash_shift_id' => 'You can only record payments on your own open shift.']);
                 }
 
                 $shiftId = $shift->id;
             }
 
             $amount = round((float) $data['amount'], 2);
-    
-            if ($amount > round((float) $bill->balance, 2)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Payment exceeds remaining balance',
-                ], 422);
+
+            $paidTotal = $this->lockedPaidTotal($bill->id);
+            $currentBalance = max(0, round((float) $bill->total - $paidTotal, 2));
+            if ($currentBalance <= 0) {
+                throw ValidationException::withMessages(['bill' => 'This bill is already fully paid.']);
+            }
+            if ($amount > $currentBalance) {
+                throw ValidationException::withMessages(['amount' => "Payment exceeds the remaining balance of {$currentBalance}."]);
+            }
+            if ($data['method'] !== 'cash' && empty($data['reference'])) {
+                throw ValidationException::withMessages(['reference' => 'A transaction reference is required for non-cash payments.']);
+            }
+            if (! empty($data['reference']) && Payment::query()
+                ->where('method', $data['method'])
+                ->where('reference', $data['reference'])
+                ->whereIn('status', ['submitted', 'paid'])
+                ->lockForUpdate()
+                ->exists()) {
+                throw ValidationException::withMessages(['reference' => 'This payment reference has already been used.']);
             }
     
             $payment = Payment::create([
@@ -307,7 +312,7 @@ class PaymentController extends Controller
     
             $beforeBill = $bill->toArray();
     
-            $bill->paid_amount = round((float) $bill->paid_amount + $amount, 2);
+            $bill->paid_amount = round($paidTotal + $amount, 2);
             $bill->balance = max(0, round((float) $bill->total - (float) $bill->paid_amount, 2));
     
             if ($bill->issued_at === null) {
@@ -397,7 +402,7 @@ class PaymentController extends Controller
             'amount' => 'required|numeric|min:0.01',
             'reference' => 'nullable|string|max:255',
             'receipt' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:4096',
-            'paid_at' => 'nullable|date',
+            'paid_at' => 'nullable|date|before_or_equal:now',
             'note' => 'nullable|string|max:1000',
         ]);
 
@@ -471,7 +476,14 @@ class PaymentController extends Controller
             $beforeBill = $bill->toArray();
             $beforePayment = $payment->toArray();
             $amount = round((float) $payment->amount, 2);
-            $newPaidAmount = round((float) $bill->paid_amount + $amount, 2);
+            $paidTotal = $this->lockedPaidTotal($bill->id);
+            $currentBalance = max(0, round((float) $bill->total - $paidTotal, 2));
+            if ($amount > $currentBalance) {
+                throw ValidationException::withMessages([
+                    'amount' => "Submitted payment exceeds the remaining balance of {$currentBalance}.",
+                ]);
+            }
+            $newPaidAmount = round($paidTotal + $amount, 2);
             $newBalance = max(0, round((float) $bill->total - $newPaidAmount, 2));
 
             $shiftId = null;
@@ -578,5 +590,15 @@ class PaymentController extends Controller
         ];
 
         return response()->json(['success' => true, 'data' => ['rows' => $rows, 'summary' => $summary]]);
+    }
+
+    private function lockedPaidTotal(int $billId): float
+    {
+        return round((float) Payment::query()
+            ->where('bill_id', $billId)
+            ->where('status', 'paid')
+            ->lockForUpdate()
+            ->get(['amount'])
+            ->sum('amount'), 2);
     }
 }

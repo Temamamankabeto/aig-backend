@@ -12,7 +12,7 @@ class InventoryReportController extends Controller
 {
     public function lowStock(Request $request)
     {
-        if (! $request->user()?->can('inventory.read')) {
+        if (! $request->user()?->can('inventory.read') && ! $request->user()?->can('reports.inventory.read')) {
             abort(403);
         }
 
@@ -46,7 +46,7 @@ class InventoryReportController extends Controller
 
     public function reorderSuggestions(Request $request)
     {
-        if (! $request->user()?->can('inventory.read')) {
+        if (! $request->user()?->can('inventory.read') && ! $request->user()?->can('reports.inventory.read')) {
             abort(403);
         }
 
@@ -65,7 +65,7 @@ class InventoryReportController extends Controller
 
     public function recipeIntegrity(Request $request)
     {
-        if (! $request->user()?->can('inventory.read')) {
+        if (! $request->user()?->can('inventory.read') && ! $request->user()?->can('reports.inventory.read')) {
             abort(403);
         }
 
@@ -90,7 +90,7 @@ class InventoryReportController extends Controller
 
     public function stockValuation(Request $request)
     {
-        if (! $request->user()?->can('inventory.read')) {
+        if (! $request->user()?->can('inventory.read') && ! $request->user()?->can('reports.inventory.read')) {
             abort(403);
         }
 
@@ -110,7 +110,7 @@ class InventoryReportController extends Controller
 
     public function stockStatusSummary(Request $request)
     {
-        if (! $request->user()?->can('inventory.read')) {
+        if (! $request->user()?->can('inventory.read') && ! $request->user()?->can('reports.inventory.read')) {
             abort(403);
         }
 
@@ -132,7 +132,7 @@ class InventoryReportController extends Controller
 
     public function expiredItems(Request $request)
     {
-        if (! $request->user()?->can('inventory.read')) {
+        if (! $request->user()?->can('inventory.read') && ! $request->user()?->can('reports.inventory.read')) {
             abort(403);
         }
 
@@ -146,7 +146,7 @@ class InventoryReportController extends Controller
 
     public function receivingHistory(Request $request)
     {
-        if (! $request->user()?->can('inventory.read')) {
+        if (! $request->user()?->can('inventory.read') && ! $request->user()?->can('reports.inventory.read')) {
             abort(403);
         }
 

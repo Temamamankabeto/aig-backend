@@ -13,7 +13,7 @@ use App\Http\Controllers\Api\StockReceivingController;
 use App\Http\Controllers\Api\SupplierController;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware(['auth:sanctum'])->prefix('food-controller')->group(function () {
+Route::middleware(['auth:sanctum', 'role:F&B Controller|General Admin'])->prefix('food-controller')->group(function () {
     Route::get('/dashboard', [FoodControllerController::class, 'dashboard']);
 
     Route::get('/alerts', [NotificationController::class, 'index']);

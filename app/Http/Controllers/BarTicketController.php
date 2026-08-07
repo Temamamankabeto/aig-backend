@@ -217,6 +217,111 @@ class BarTicketController extends Controller
         });
     }
 
+    public function delay(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'estimated_minutes' => ['required', 'integer', 'min:1', 'max:240'],
+            'reason' => ['required', 'string', 'max:500'],
+        ]);
+
+        return DB::transaction(function () use ($request, $id, $validated) {
+            $ticket = BarTicket::lockForUpdate()
+                ->with('orderItem.order')
+                ->findOrFail($id);
+
+            $this->authorize('delay', $ticket);
+
+            if (! in_array($ticket->status, ['pending', 'confirmed', 'preparing', 'delayed'], true)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Only an active ticket can be delayed.',
+                ], 422);
+            }
+
+            $before = $ticket->toArray();
+            $ticket->update([
+                'status' => 'delayed',
+                'estimated_minutes' => $validated['estimated_minutes'],
+                'delay_reason' => $validated['reason'],
+                'barman_id' => $ticket->barman_id ?? $request->user()->id,
+                'started_at' => $ticket->started_at ?? now(),
+            ]);
+
+            $order = $ticket->orderItem->order;
+            $this->notificationService->notifyUser(
+                $order->waiter_id,
+                'Bar item delayed',
+                "Bar items for order {$order->order_number} are delayed by approximately {$validated['estimated_minutes']} minutes.",
+                ['kind' => 'bar_delayed', 'order_id' => $order->id, 'ticket_id' => $ticket->id]
+            );
+
+            $this->auditLogger->log(
+                $request,
+                $request->user()->id,
+                'BarTicket',
+                $ticket->id,
+                'bar_ticket_delayed',
+                $before,
+                $ticket->fresh()->toArray(),
+                'Bar ticket delayed.'
+            );
+
+            return response()->json(['success' => true, 'data' => $ticket->fresh()->load('orderItem.order')]);
+        });
+    }
+
+    public function reject(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'max:500'],
+        ]);
+
+        return DB::transaction(function () use ($request, $id, $validated) {
+            $ticket = BarTicket::lockForUpdate()
+                ->with('orderItem.order')
+                ->findOrFail($id);
+
+            $this->authorize('reject', $ticket);
+
+            if (! in_array($ticket->status, ['pending', 'confirmed', 'preparing', 'delayed'], true)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Only an active ticket can be rejected.',
+                ], 422);
+            }
+
+            $before = $ticket->toArray();
+            $ticket->update([
+                'status' => 'rejected',
+                'rejection_reason' => $validated['reason'],
+                'barman_id' => $ticket->barman_id ?? $request->user()->id,
+            ]);
+            $ticket->orderItem->update(['item_status' => 'rejected']);
+
+            $order = $ticket->orderItem->order;
+            OrderStatusService::recalc($order->id);
+            $this->notificationService->notifyUser(
+                $order->waiter_id,
+                'Bar item rejected',
+                "A bar item for order {$order->order_number} was rejected: {$validated['reason']}",
+                ['kind' => 'bar_rejected', 'order_id' => $order->id, 'ticket_id' => $ticket->id]
+            );
+
+            $this->auditLogger->log(
+                $request,
+                $request->user()->id,
+                'BarTicket',
+                $ticket->id,
+                'bar_ticket_rejected',
+                $before,
+                $ticket->fresh()->toArray(),
+                'Bar ticket rejected.'
+            );
+
+            return response()->json(['success' => true, 'data' => $ticket->fresh()->load('orderItem.order')]);
+        });
+    }
+
     public function served(Request $request, $id)
     {
         return DB::transaction(function () use ($request, $id) {

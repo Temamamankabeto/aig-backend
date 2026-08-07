@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Support\RoleNames;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
@@ -24,15 +25,9 @@ class PublicAuthController extends Controller
             'email' => $validated['email'],
             'phone' => $validated['phone'],
             'password' => Hash::make($validated['password']),
-            'role' => 'customer',
         ]);
 
-        if (method_exists($user, 'assignRole')) {
-            try {
-                $user->assignRole('customer');
-            } catch (\Throwable $e) {
-            }
-        }
+        $user->assignRole(RoleNames::CUSTOMER);
 
         $token = $user->createToken('public_auth')->plainTextToken;
 

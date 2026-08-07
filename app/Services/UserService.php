@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\User;
+use App\Support\RoleNames;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
@@ -206,8 +207,16 @@ class UserService
 
     protected function findRole(string $roleName): Role
     {
+        $canonicalRole = RoleNames::canonical($roleName);
+
+        if (!$canonicalRole) {
+            throw ValidationException::withMessages([
+                'role' => ['The selected role is invalid.'],
+            ]);
+        }
+
         return Role::query()
-            ->where('name', $roleName)
+            ->where('name', $canonicalRole)
             ->where('guard_name', 'sanctum')
             ->firstOrFail();
     }

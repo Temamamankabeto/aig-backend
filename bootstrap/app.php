@@ -7,6 +7,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -25,6 +26,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // Add CORS middleware globally
         $middleware->append(\Illuminate\Http\Middleware\HandleCors::class);
+        $middleware->api(append: [\App\Http\Middleware\NormalizeApiResponse::class]);
 
         $middleware->redirectGuestsTo(fn () => null);
     })
@@ -35,6 +37,8 @@ return Application::configure(basePath: dirname(__DIR__))
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed.',
+                'data' => null,
+                'meta' => null,
                 'errors' => $e->errors(),
             ], 422);
         });
@@ -43,6 +47,8 @@ return Application::configure(basePath: dirname(__DIR__))
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthenticated.',
+                'data' => null,
+                'meta' => null,
             ], 401);
         });
 
@@ -50,6 +56,8 @@ return Application::configure(basePath: dirname(__DIR__))
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage() ?: 'Forbidden.',
+                'data' => null,
+                'meta' => null,
             ], 403);
         });
 
@@ -57,13 +65,36 @@ return Application::configure(basePath: dirname(__DIR__))
             return response()->json([
                 'success' => false,
                 'message' => 'Resource not found.',
+                'data' => null,
+                'meta' => null,
             ], 404);
+        });
+
+        $exceptions->render(function (HttpExceptionInterface $e, $request) {
+            $status = $e->getStatusCode();
+            $messages = [
+                400 => 'Bad request.',
+                403 => 'Forbidden.',
+                404 => 'Resource not found.',
+                405 => 'Method not allowed.',
+                409 => 'Request conflicts with the current resource state.',
+                429 => 'Too many requests.',
+            ];
+
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage() ?: ($messages[$status] ?? 'Request failed.'),
+                'data' => null,
+                'meta' => null,
+            ], $status, $e->getHeaders());
         });
 
         $exceptions->render(function (Throwable $e, $request) {
             return response()->json([
                 'success' => false,
                 'message' => config('app.debug') ? $e->getMessage() : 'Server error.',
+                'data' => null,
+                'meta' => null,
             ], 500);
         });
     })

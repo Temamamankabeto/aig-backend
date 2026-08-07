@@ -11,6 +11,7 @@ use App\Models\RecipeItem;
 use App\Models\Supplier;
 use App\Models\User;
 use Illuminate\Database\Seeder;
+use App\Support\RoleNames;
 use Illuminate\Support\Facades\Hash;
 use Spatie\Permission\Models\Role;
 
@@ -18,9 +19,9 @@ class RestaurantDemoDataSeeder extends Seeder
 {
     public function run(): void
     {
-        $adminRole = Role::where('name', 'General Admin')->first();
-        $waiterRole = Role::where('name', 'Waiter')->first();
-        $cashierRole = Role::where('name', 'Cashier')->first();
+        $adminRole = Role::where('name', RoleNames::GENERAL_ADMIN)->first();
+        $waiterRole = Role::where('name', RoleNames::WAITER)->first();
+        $cashierRole = Role::where('name', RoleNames::CASHIER)->first();
 
         $admin = User::firstOrCreate(
             ['email' => 'admin@restaurant.local'],

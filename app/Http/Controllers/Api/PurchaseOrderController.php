@@ -11,6 +11,7 @@ use App\Services\AuditLogger;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class PurchaseOrderController extends Controller
 {
@@ -55,7 +56,7 @@ class PurchaseOrderController extends Controller
         $now = now();
         $monthStart = $now->copy()->startOfMonth();
         $weekStart = $now->copy()->startOfWeek();
-        $validatedStatuses = ['food_validated', 'food_validated'];
+        $validatedStatuses = ['food_validated'];
 
         $base = PurchaseOrder::query();
 
@@ -199,7 +200,7 @@ class PurchaseOrderController extends Controller
         $this->authorize('create', PurchaseOrder::class);
         $data = $request->validate([
             'supplier_id' => 'required|exists:suppliers,id',
-            'expected_date' => 'nullable|date',
+            'expected_date' => 'nullable|date|after_or_equal:today',
             'notes' => 'nullable|string|max:3000',
             'status' => 'nullable|in:draft,submitted',
             'reference_source' => 'nullable|string|max:255',
@@ -208,11 +209,18 @@ class PurchaseOrderController extends Controller
             'items.*.inventory_item_id' => 'required|exists:inventory_items,id|distinct',
             'items.*.quantity' => 'required|numeric|min:0.001',
             'items.*.base_unit' => 'nullable|in:kg,L,pcs',
-            'items.*.unit_cost' => 'required|numeric|min:0',
+            'items.*.unit_cost' => 'required|numeric|min:0|max:999999999.99',
         ]);
 
         return DB::transaction(function () use ($request, $data) {
-            $poNumber = 'PO-' . now()->format('Ymd') . '-' . str_pad((string) random_int(1, 9999), 4, '0', STR_PAD_LEFT);
+            $supplier = \App\Models\Supplier::query()->lockForUpdate()->findOrFail($data['supplier_id']);
+            if (! $supplier->is_active) {
+                throw ValidationException::withMessages(['supplier_id' => 'The selected supplier is inactive.']);
+            }
+
+            do {
+                $poNumber = 'PO-' . now()->format('Ymd') . '-' . str_pad((string) random_int(1, 999999), 6, '0', STR_PAD_LEFT);
+            } while (PurchaseOrder::where('po_number', $poNumber)->exists());
             $initialStatus = $data['status'] ?? 'draft';
 
             $items = $data['items'] ?? [];
@@ -230,7 +238,7 @@ class PurchaseOrderController extends Controller
             }
 
             if (empty($items)) {
-                return response()->json(['success' => false, 'message' => 'At least one purchase order item is required.'], 422);
+                throw ValidationException::withMessages(['items' => 'At least one purchase order item is required.']);
             }
 
             $po = PurchaseOrder::create([
@@ -362,6 +370,12 @@ class PurchaseOrderController extends Controller
             $this->authorize('approve', $po);
             if (! in_array($po->status, ['food_validated'], true)) {
                 return response()->json(['success' => false, 'message' => 'Only F&B validated purchase requests can be approved.'], 422);
+            }
+
+            if ((int) $po->created_by === (int) $request->user()->id && ! $request->user()->hasRole('General Admin')) {
+                throw ValidationException::withMessages([
+                    'approval' => 'The request creator cannot approve the same purchase order.',
+                ]);
             }
 
             $before = $po->toArray();

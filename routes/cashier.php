@@ -12,7 +12,7 @@ use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware(['auth:sanctum'])->group(function () {
+Route::middleware(['auth:sanctum', 'role:Cashier|General Admin'])->group(function () {
 
     /*
     |--------------------------------------------------------------------------

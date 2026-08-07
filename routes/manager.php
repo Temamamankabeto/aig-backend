@@ -10,7 +10,7 @@ use App\Models\User;
 
 
 
-Route::middleware(['auth:sanctum'])->group(function () {
+Route::middleware(['auth:sanctum', 'role:Manager|General Admin'])->group(function () {
     Route::get('/manager/dashboard', [DashboardController::class, 'managerDashboard']);
     Route::get('/manager/reports/sales-analytics', [AnalyticsReportController::class, 'salesAnalytics']);
     Route::get('/manager/reports/item-popularity', [AnalyticsReportController::class, 'itemPopularity']);
@@ -21,6 +21,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/manager/reports/category-sales', [AnalyticsReportController::class, 'categorySales']);
     Route::get('/manager/reports/recipe-integrity', [InventoryReportController::class, 'recipeIntegrity']);
     Route::get('/manager/reports/stock-valuation', [InventoryReportController::class, 'stockValuation']);
+    Route::get('/manager/reports/low-stock', [InventoryReportController::class, 'lowStock']);
+    Route::get('/manager/reports/reorder-suggestions', [InventoryReportController::class, 'reorderSuggestions']);
+    Route::get('/manager/reports/stock-status-summary', [InventoryReportController::class, 'stockStatusSummary']);
+    Route::get('/manager/reports/expired-items', [InventoryReportController::class, 'expiredItems']);
+    Route::get('/manager/reports/receiving-history', [InventoryReportController::class, 'receivingHistory']);
 
 
     // Manager owns table management. Admin sidebar access is removed from the frontend.

@@ -5,7 +5,7 @@ use App\Http\Controllers\Api\CreditAccountUserController;
 use App\Http\Controllers\Api\CreditCardController;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware(['auth:sanctum'])->group(function () {
+Route::middleware(['auth:sanctum', 'role:Manager|Finance|Cashier|General Admin'])->group(function () {
     Route::get('/credit/cards/scan', [CreditCardController::class, 'scan']);
     Route::post('/credit/cards/validate', [CreditCardController::class, 'validate']);
     Route::get('/credit/accounts', [CreditOrderController::class, 'accounts']);

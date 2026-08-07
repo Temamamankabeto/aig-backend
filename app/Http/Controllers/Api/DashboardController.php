@@ -4,9 +4,16 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Bill;
+use App\Models\BarTicket;
 use App\Models\CashShift;
+use App\Models\DiningTable;
+use App\Models\InventoryItem;
+use App\Models\KitchenTicket;
 use App\Models\Order;
 use App\Models\Payment;
+use App\Models\PurchaseOrder;
+use App\Models\RefundRequest;
+use App\Models\User;
 use App\Services\CashShiftService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -27,11 +34,23 @@ class DashboardController extends Controller
     public function waiterDashboard(Request $request)
     {
         Gate::authorize('dashboard.waiter');
+
+        $orders = Order::query()
+            ->where('waiter_id', $request->user()->id)
+            ->whereDate('ordered_at', now()->toDateString());
+
         return response()->json([
             "success" => true,
-            "role" => "waiter",
-            "message" => "Waiter Dashboard",
-            "user" => $request->user()
+            "message" => "Waiter dashboard loaded successfully",
+            "data" => [
+                'summary' => [
+                    'today_orders' => (clone $orders)->count(),
+                    'pending_orders' => (clone $orders)->whereIn('status', ['pending', 'submitted', 'confirmed', 'preparing'])->count(),
+                    'ready_orders' => (clone $orders)->where('status', 'ready')->count(),
+                    'served_orders' => (clone $orders)->whereIn('status', ['served', 'completed'])->count(),
+                ],
+            ],
+            "meta" => null,
         ]);
     }
 
@@ -150,22 +169,42 @@ class DashboardController extends Controller
     public function barDashboard(Request $request)
     {
         Gate::authorize('bar.dashboard');
+
+        $tickets = BarTicket::query()->whereDate('created_at', now()->toDateString());
+
         return response()->json([
             "success" => true,
-            "role" => "barman",
-            "message" => "Bar Dashboard",
-            "user" => $request->user()
+            "message" => "Bar dashboard loaded successfully",
+            "data" => [
+                'summary' => [
+                    'today_tickets' => (clone $tickets)->count(),
+                    'pending_tickets' => (clone $tickets)->whereIn('status', ['pending', 'confirmed'])->count(),
+                    'preparing_tickets' => (clone $tickets)->whereIn('status', ['accepted', 'preparing'])->count(),
+                    'ready_tickets' => (clone $tickets)->where('status', 'ready')->count(),
+                ],
+            ],
+            "meta" => null,
         ]);
     }
 
     public function kitchenDashboard(Request $request)
     {
         Gate::authorize('kitchen.dashboard');
+
+        $tickets = KitchenTicket::query()->whereDate('created_at', now()->toDateString());
+
         return response()->json([
             "success" => true,
-            "role" => "kitchen",
-            "message" => "Kitchen Dashboard",
-            "user" => $request->user()
+            "message" => "Kitchen dashboard loaded successfully",
+            "data" => [
+                'summary' => [
+                    'today_tickets' => (clone $tickets)->count(),
+                    'pending_tickets' => (clone $tickets)->whereIn('status', ['pending', 'confirmed'])->count(),
+                    'preparing_tickets' => (clone $tickets)->whereIn('status', ['accepted', 'preparing'])->count(),
+                    'ready_tickets' => (clone $tickets)->where('status', 'ready')->count(),
+                ],
+            ],
+            "meta" => null,
         ]);
     }
 
@@ -183,33 +222,68 @@ class DashboardController extends Controller
     public function financeDashboard(Request $request)
     {
         Gate::authorize('finance.dashboard');
+
+        $today = now()->toDateString();
+        $payments = Payment::query()->where('status', 'paid')->whereDate('paid_at', $today);
+
         return response()->json([
             "success" => true,
-            "role" => "finance",
-            "message" => "Finance Dashboard",
-            "user" => $request->user()
+            "message" => "Finance dashboard loaded successfully",
+            "data" => [
+                'summary' => [
+                    'today_collections' => round((float) (clone $payments)->sum('amount'), 2),
+                    'paid_transactions' => (clone $payments)->count(),
+                    'pending_refunds' => RefundRequest::query()->where('status', 'pending')->count(),
+                    'outstanding_bills' => round((float) Bill::query()->whereIn('status', ['issued', 'partial'])->sum('balance'), 2),
+                ],
+            ],
+            "meta" => null,
         ]);
     }
 
     public function managerDashboard(Request $request)
     {
         Gate::authorize('manager.dashboard');
+
+        $today = now()->toDateString();
+        $orders = Order::query()->whereDate('ordered_at', $today)->whereNotIn('status', ['cancelled', 'void']);
+
         return response()->json([
             "success" => true,
-            "role" => "manager",
-            "message" => "Manager Dashboard",
-            "user" => $request->user()
+            "message" => "Manager dashboard loaded successfully",
+            "data" => [
+                'summary' => [
+                    'today_orders' => (clone $orders)->count(),
+                    'today_sales' => round((float) (clone $orders)->where('payment_status', 'paid')->sum('total'), 2),
+                    'pending_approvals' => PurchaseOrder::query()->where('status', 'food_validated')->count(),
+                    'active_tables' => DiningTable::query()->where('is_active', true)->count(),
+                    'low_stock_items' => InventoryItem::query()->whereColumn('current_stock', '<=', 'minimum_quantity')->count(),
+                ],
+            ],
+            "meta" => null,
         ]);
     }
 
     public function generalDashboard(Request $request)
     {
         Gate::authorize('general.dashboard');
+
+        $today = now()->toDateString();
+
         return response()->json([
             "success" => true,
-            "role" => "general-admin",
-            "message" => "General Admin Dashboard",
-            "user" => $request->user()
+            "message" => "General Admin dashboard loaded successfully",
+            "data" => [
+                'summary' => [
+                    'total_users' => User::query()->count(),
+                    'active_users' => User::query()->where('is_active', true)->count(),
+                    'today_orders' => Order::query()->whereDate('ordered_at', $today)->count(),
+                    'today_collections' => round((float) Payment::query()->where('status', 'paid')->whereDate('paid_at', $today)->sum('amount'), 2),
+                    'pending_purchase_approvals' => PurchaseOrder::query()->whereIn('status', ['submitted', 'food_validated'])->count(),
+                    'low_stock_items' => InventoryItem::query()->whereColumn('current_stock', '<=', 'minimum_quantity')->count(),
+                ],
+            ],
+            "meta" => null,
         ]);
     }
 

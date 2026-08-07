@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Support\RoleNames;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
@@ -39,7 +40,7 @@ class AuthController extends Controller
             'is_active' => true,
         ]);
 
-        $user->assignRole('customer');
+        $user->assignRole(RoleNames::CUSTOMER);
 
         $accessToken = $user->createToken('aig-api-token')->plainTextToken;
         $refreshToken = Str::random(64);

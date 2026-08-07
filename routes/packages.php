@@ -3,7 +3,7 @@
 use App\Http\Controllers\Api\PackageOrderController;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware(['auth:sanctum'])->group(function () {
+Route::middleware(['auth:sanctum', 'role:Manager|Finance|Cashier|Kitchen Staff|Barman|Store Keeper|Waiter|General Admin'])->group(function () {
     Route::get('/packages', [PackageOrderController::class, 'packages']);
     Route::post('/packages', [PackageOrderController::class, 'storePackage']);
     Route::get('/packages/{id}', [PackageOrderController::class, 'showPackage']);

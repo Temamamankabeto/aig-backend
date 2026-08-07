@@ -14,6 +14,7 @@ use App\Services\AuditLogger;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class StockReceivingController extends Controller
 {
@@ -59,9 +60,9 @@ class StockReceivingController extends Controller
             'delivery_note' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:4096',
             'delivery_note_path' => 'nullable|string|max:1000',
             'items' => 'required|array|min:1',
-            'items.*.purchase_order_item_id' => 'required|exists:purchase_order_items,id',
+            'items.*.purchase_order_item_id' => 'required|integer|distinct|exists:purchase_order_items,id',
             'items.*.quantity' => 'required|numeric|min:0.001',
-            'items.*.expiry_date' => 'nullable|date',
+            'items.*.expiry_date' => 'nullable|date|after_or_equal:today',
             'items.*.batch_note' => 'nullable|string|max:1000',
         ]);
 
@@ -69,24 +70,42 @@ class StockReceivingController extends Controller
             $po = PurchaseOrder::with('items')->lockForUpdate()->findOrFail($poId);
 
             if ($po->status === 'cancelled') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Cancelled PO cannot be received',
-                ], 422);
+                throw ValidationException::withMessages(['purchase_order' => 'Cancelled PO cannot be received.']);
             }
 
             if (! in_array($po->status, ['approved', 'partially_received'], true)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'PO must be approved before receiving',
-                ], 422);
+                throw ValidationException::withMessages(['purchase_order' => 'PO must be approved before receiving.']);
             }
 
             if ($po->items->isEmpty()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'PO has no items to receive',
-                ], 422);
+                throw ValidationException::withMessages(['items' => 'PO has no items to receive.']);
+            }
+
+            // Validate every line while the PO is locked before creating any receiving,
+            // batch, transaction, or stock mutation. This prevents partial commits.
+            $preparedLines = [];
+            foreach ($data['items'] as $index => $line) {
+                $poi = $po->items->firstWhere('id', (int) $line['purchase_order_item_id']);
+                if (! $poi) {
+                    throw ValidationException::withMessages([
+                        "items.{$index}.purchase_order_item_id" => 'Selected item does not belong to this purchase order.',
+                    ]);
+                }
+
+                $remainingQty = round((float) $poi->quantity - (float) ($poi->received_quantity ?? 0), 3);
+                $receivedQty = round((float) $line['quantity'], 3);
+                if ($remainingQty <= 0) {
+                    throw ValidationException::withMessages([
+                        "items.{$index}.quantity" => 'This purchase order line has already been fully received.',
+                    ]);
+                }
+                if ($receivedQty > $remainingQty) {
+                    throw ValidationException::withMessages([
+                        "items.{$index}.quantity" => "Quantity cannot exceed the remaining {$remainingQty}.",
+                    ]);
+                }
+
+                $preparedLines[] = compact('line', 'poi', 'receivedQty');
             }
 
             $deliveryNotePath = $data['delivery_note_path'] ?? null;
@@ -108,38 +127,13 @@ class StockReceivingController extends Controller
             $createdBatches = [];
             $createdTransactions = [];
 
-            foreach ($data['items'] as $line) {
-                $poi = $po->items->firstWhere('id', $line['purchase_order_item_id']);
-
-                if (! $poi) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Selected item does not belong to the purchase order.',
-                    ], 422);
-                }
+            foreach ($preparedLines as $preparedLine) {
+                $line = $preparedLine['line'];
+                $poi = $preparedLine['poi'];
 
                 $inv = InventoryItem::lockForUpdate()->findOrFail($poi->inventory_item_id);
 
-                $remainingQty = round(
-                    (float) $poi->quantity - (float) ($poi->received_quantity ?? 0),
-                    3
-                );
-
-                $receivedQty = round((float) $line['quantity'], 3);
-
-                if ($receivedQty <= 0) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => "Received quantity must be greater than zero for item #{$poi->id}.",
-                    ], 422);
-                }
-
-                if ($receivedQty > $remainingQty) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => "Received quantity cannot exceed remaining quantity for item #{$poi->id}.",
-                    ], 422);
-                }
+                $receivedQty = $preparedLine['receivedQty'];
 
                 $beforeQty = round((float) $inv->current_stock, 3);
                 $afterQty = round($beforeQty + $receivedQty, 3);

@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
+use App\Support\RoleNames;
 use Illuminate\Support\Facades\Hash;
 use App\Models\User;
 use Spatie\Permission\Models\Role;
@@ -17,13 +18,19 @@ class RolesPermissionsSeeder extends Seeder
 
         $permissions = [
             'auth.me',
+            'general.dashboard',
+            'manager.dashboard',
+            'food-controller.dashboard',
+            'finance.dashboard',
+            'dashboard.waiter',
             'cashier.dashboard',
+            'kitchen.dashboard',
+            'bar.dashboard',
 
             'users.read', 'users.create', 'users.update', 'users.disable', 'users.delete',
             'roles.read', 'roles.assign',
             'permissions.read',
             'audit.read',
-            'settings.update',
             'settings.update',
 
             'menu.read', 'menu.create', 'menu.update', 'menu.disable',
@@ -109,6 +116,7 @@ class RolesPermissionsSeeder extends Seeder
             'package.orders.complete',
             'package.orders.cancel',
             'package.orders.settle',
+            'package.orders.service',
         ];
 
         foreach ($permissions as $permission) {
@@ -119,7 +127,7 @@ class RolesPermissionsSeeder extends Seeder
         }
 
         $roleMap = [
-            'Customer' => [
+            RoleNames::CUSTOMER => [
                 'auth.me',
                 'menu.read',
                 'orders.create',
@@ -127,8 +135,9 @@ class RolesPermissionsSeeder extends Seeder
                 'orders.track',
             ],
 
-            'Waiter' => [
+            RoleNames::WAITER => [
                 'auth.me',
+                'dashboard.waiter',
                 'menu.read',
 
                 'tables.read',
@@ -138,6 +147,7 @@ class RolesPermissionsSeeder extends Seeder
                 'orders.create',
                 'orders.read',
                 'orders.update',
+                'orders.cancel',
                 'orders.track',
 
                 'order_items.add',
@@ -151,7 +161,7 @@ class RolesPermissionsSeeder extends Seeder
                 'package.orders.read',
             ],
 
-            'Cashier' => [
+            RoleNames::CASHIER => [
                 'auth.me',
                 'cashier.dashboard',
 
@@ -184,10 +194,12 @@ class RolesPermissionsSeeder extends Seeder
                 // Package payment/settlement
                 'package.orders.read',
                 'package.orders.settle',
+                'reports.sales.read',
             ],
 
-            'Kitchen Staff' => [
+            RoleNames::KITCHEN_STAFF => [
                 'auth.me',
+                'kitchen.dashboard',
                 'menu.read',
 
                 'kitchen.queue.read',
@@ -197,8 +209,9 @@ class RolesPermissionsSeeder extends Seeder
                 'package.orders.prepare',
             ],
 
-            'Barman' => [
+            RoleNames::BARMAN => [
                 'auth.me',
+                'bar.dashboard',
                 'menu.read',
 
                 'bar.queue.read',
@@ -208,8 +221,10 @@ class RolesPermissionsSeeder extends Seeder
                 'package.orders.prepare',
             ],
 
-            'Purchaser' => [
+            RoleNames::PURCHASER => [
                 'auth.me',
+
+                'inventory.items.read',
 
                 'suppliers.read',
                 'suppliers.create',
@@ -225,7 +240,7 @@ class RolesPermissionsSeeder extends Seeder
                 'purchases.create',
             ],
 
-            'Store Keeper' => [
+            RoleNames::STORE_KEEPER => [
                 'auth.me',
 
                 'inventory.read',
@@ -253,8 +268,9 @@ class RolesPermissionsSeeder extends Seeder
                 'package.orders.read',
             ],
 
-            'F&B Controller' => [
+            RoleNames::FOOD_CONTROLLER => [
                 'auth.me',
+                'food-controller.dashboard',
 
                 'menu.read',
                 'menu.create',
@@ -279,8 +295,9 @@ class RolesPermissionsSeeder extends Seeder
                 'stock_receiving.approve',
             ],
 
-            'Manager' => [
+            RoleNames::MANAGER => [
                 'auth.me',
+                'manager.dashboard',
 
                 'tables.read',
 
@@ -333,10 +350,12 @@ class RolesPermissionsSeeder extends Seeder
                 'package.orders.complete',
                 'package.orders.cancel',
                 'package.orders.settle',
+                'package.orders.service',
             ],
 
-            'Finance' => [
+            RoleNames::FINANCE => [
                 'auth.me',
+                'finance.dashboard',
 
                 'payments.read',
                 'payments.refund.approve',
@@ -376,7 +395,7 @@ class RolesPermissionsSeeder extends Seeder
         }
 
         $generalAdmin = Role::firstOrCreate([
-            'name' => 'General Admin',
+            'name' => RoleNames::GENERAL_ADMIN,
             'guard_name' => 'sanctum',
         ]);
 
@@ -391,8 +410,8 @@ class RolesPermissionsSeeder extends Seeder
             ]
         );
 
-        if (!$admin->hasRole('General Admin')) {
-            $admin->assignRole('General Admin');
+        if (!$admin->hasRole(RoleNames::GENERAL_ADMIN)) {
+            $admin->assignRole(RoleNames::GENERAL_ADMIN);
         }
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();

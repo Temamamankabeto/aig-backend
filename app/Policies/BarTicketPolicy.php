@@ -40,6 +40,11 @@ class BarTicketPolicy
         return $this->canManageBarTickets($user);
     }
 
+    public function delay(User $user, BarTicket $model): bool
+    {
+        return $this->canManageBarTickets($user);
+    }
+
     private function canManageBarTickets(User $user): bool
     {
         return $this->allows($user, 'kds.bar')
