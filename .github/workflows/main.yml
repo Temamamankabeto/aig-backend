@@ -1,92 +1,109 @@
-name: Deploy Laravel to cPanel
+name: Deploy Laravel Backend
 
 on:
   push:
-    branches: [ main ] # Change to your default branch
+    branches:
+      - main
+
+concurrency:
+  group: production-backend
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
   deploy:
+    name: Deploy to cPanel
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+
     steps:
-      - name: Checkout Code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Debug Environment
+      - name: Validate deployment secrets
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          REMOTE_PATH: ${{ secrets.REMOTE_PATH }}
         run: |
-          echo "SSH_HOST: ${{ secrets.SSH_HOST }}"
-          echo "SSH_USER: ${{ secrets.SSH_USER }}"
-          echo "SSH_PORT: ${{ secrets.SSH_PORT }}"
-          echo "REMOTE_PATH: ${{ secrets.REMOTE_PATH }}"
-          
-          # Test DNS resolution
-          if [ -n "${{ secrets.SSH_HOST }}" ]; then
-            nslookup ${{ secrets.SSH_HOST }} || echo "DNS resolution failed"
-            dig ${{ secrets.SSH_HOST }} || echo "DIG failed"
-            host ${{ secrets.SSH_HOST }} || echo "HOST command failed"
-          else
-            echo "SSH_HOST secret is not set"
-          fi 
+          test -n "$SSH_HOST" || {
+            echo "::error::SSH_HOST is missing"
+            exit 1
+          }
 
-      - name: Setup SSH Key 
-        run: | 
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          
-          # Add host to known hosts if host is provided
-          if [ -n "${{ secrets.SSH_HOST }}" ]; then
-            ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || echo "ssh-keyscan failed"
-          fi
+          test -n "$SSH_USER" || {
+            echo "::error::SSH_USER is missing"
+            exit 1
+          }
 
-      - name: Test SSH Connection
-        run: |
-          if [ -n "${{ secrets.SSH_HOST }}" ] && [ -n "${{ secrets.SSH_USER }}" ]; then
-            echo "Testing SSH connection..."
-            ssh -i ~/.ssh/deploy_key -o ConnectTimeout=10 -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "echo 'SSH connection successful'" || echo "SSH connection failed"
-          else
-            echo "Missing SSH_HOST or SSH_USER secrets"
-          fi
+          test -n "$SSH_PORT" || {
+            echo "::error::SSH_PORT is missing"
+            exit 1
+          }
 
-      - name: Execute Remote SSH Commands
-        if: success()
-        uses: appleboy/ssh-action@v1.0.3
+          test -n "$SSH_KEY" || {
+            echo "::error::SSH_KEY is missing"
+            exit 1
+          }
+
+          test -n "$REMOTE_PATH" || {
+            echo "::error::REMOTE_PATH is missing"
+            exit 1
+          }
+
+      - name: Deploy application
+        uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          timeout: 300s
-          command_timeout: 60s
+          port: ${{ secrets.SSH_PORT }}
+          timeout: 60s
+          command_timeout: 15m
+          script_stop: true
           script: |
-            cd ${{ secrets.REMOTE_PATH }}
-            
-            # Backup current version
-            if [ -d "storage/app/backups" ]; then
-              tar -czf storage/app/backups/backup-$(date +%Y%m%d-%H%M%S).tar.gz --exclude=storage/app/backups .
-            fi
-            
-            # Pull latest changes
-            git pull origin main
-            
-            # Install dependencies
-            composer install --no-interaction --prefer-dist --optimize-autoloader
-            
-            # Run migrations (only if needed)
+            set -e
+
+            cd "${{ secrets.REMOTE_PATH }}"
+
+            test -f artisan || {
+              echo "Laravel artisan file not found"
+              exit 1
+            }
+
+            test -f .env || {
+              echo "Production .env file not found"
+              exit 1
+            }
+
+            php artisan down --retry=30 || true
+
+            git fetch origin main
+            git checkout main
+            git pull --ff-only origin main
+
+            composer install \
+              --no-dev \
+              --prefer-dist \
+              --no-interaction \
+              --optimize-autoloader
+
+            php artisan optimize:clear
             php artisan migrate --force
-            
-            # Clear and cache configurations
-            php artisan config:clear
+            php artisan db:seed --class=RolesPermissionsSeeder --force
+            php artisan permission:cache-reset
+            php artisan storage:link || true
+
             php artisan config:cache
-            php artisan route:clear
             php artisan route:cache
-            php artisan view:clear
             php artisan view:cache
-            
-            # Set proper permissions
-            chmod -R 755 storage
-            chmod -R 755 bootstrap/cache
-            
-            # Optimize for production
-            php artisan optimize
-            
-            echo "Deployment completed successfully!"
+
+            chmod -R 775 storage bootstrap/cache
+
+            php artisan up
+
+            echo "Laravel backend deployed successfully"
