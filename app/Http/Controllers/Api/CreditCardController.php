@@ -12,10 +12,10 @@ class CreditCardController extends Controller
 {
     public function scan(Request $request)
     {
-        return $this->validate($request);
+        return $this->validateCard($request);
     }
 
-    public function validate(Request $request)
+    public function validateCard(Request $request)
     {
         abort_unless($request->user()?->can('credit.accounts.read') || $request->user()?->can('credit.orders.create'), 403, 'You are not authorized to validate credit cards.');
 
