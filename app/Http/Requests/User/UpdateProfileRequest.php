@@ -4,6 +4,7 @@ namespace App\Http\Requests\User;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
 
 class UpdateProfileRequest extends FormRequest
 {
@@ -31,7 +32,7 @@ class UpdateProfileRequest extends FormRequest
                 Rule::unique('users', 'phone')->ignore($userId),
             ],
             'old_password' => ['nullable', 'string'],
-            'new_password' => ['nullable', 'string', 'min:6', 'max:255'],
+            'new_password' => ['nullable', 'string', 'max:255', Password::min(12)->mixedCase()->letters()->numbers()->symbols()],
             'profile' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
         ];
     }

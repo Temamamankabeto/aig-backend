@@ -3,6 +3,7 @@
 namespace App\Http\Requests\User;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rules\Password;
 
 class ResetUserPasswordRequest extends FormRequest
 {
@@ -14,7 +15,7 @@ class ResetUserPasswordRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'new_password' => ['required', 'string', 'min:6', 'max:255'],
+            'new_password' => ['required', 'string', 'max:255', Password::min(12)->mixedCase()->letters()->numbers()->symbols()],
         ];
     }
 }

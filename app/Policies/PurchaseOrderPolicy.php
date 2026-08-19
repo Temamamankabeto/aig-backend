@@ -10,8 +10,17 @@ class PurchaseOrderPolicy
 {
     use ChecksPermissions;
 
-    public function viewAny(User $user): bool { return $this->allows($user, 'purchases.read', 'purchase_orders.read'); }
-    public function view(User $user, PurchaseOrder $model): bool { return $this->allows($user, 'purchases.read', 'purchase_orders.read'); }
+    public function viewAny(User $user): bool
+    {
+        return $this->allows($user, 'purchases.read', 'purchase_orders.read')
+            || $user->hasAnyRole(['F&B Controller', 'General Admin']);
+    }
+
+    public function view(User $user, PurchaseOrder $model): bool
+    {
+        return $this->allows($user, 'purchases.read', 'purchase_orders.read')
+            || $user->hasAnyRole(['F&B Controller', 'General Admin']);
+    }
     public function create(User $user): bool { return $this->allows($user, 'purchases.create', 'purchase_orders.create'); }
     public function approve(User $user, PurchaseOrder $model): bool { return $this->allows($user, 'purchases.approve', 'purchase_orders.approve'); }
     public function cancel(User $user, PurchaseOrder $model): bool { return $this->allows($user, 'purchases.approve', 'purchase_orders.approve'); }

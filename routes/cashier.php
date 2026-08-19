@@ -48,9 +48,6 @@ Route::middleware(['auth:sanctum', 'role:Cashier|General Admin'])->group(functio
     Route::post('/cashier/bills/{orderId}/issue', [CashierBillController::class, 'issue']);
     Route::post('/cashier/bills/{id}/void', [CashierBillController::class, 'void']);
 
-    // keep only if you really have this controller method
-    Route::post('/cashier/bills/{id}/voide', [CashierBillController::class, 'voide']);
-
     /*
     |--------------------------------------------------------------------------
     | Payments

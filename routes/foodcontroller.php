@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\FoodControllerController;
 use App\Http\Controllers\Api\InventoryItemController;
 use App\Http\Controllers\Api\InventoryReportController;
 use App\Http\Controllers\Api\InventoryTransactionController;
+use App\Http\Controllers\Api\DepartmentStockoutRequestController;
 use App\Http\Controllers\Api\MenuCategoryController;
 use App\Http\Controllers\Api\MenuItemController;
 use App\Http\Controllers\Api\NotificationController;
@@ -11,10 +12,22 @@ use App\Http\Controllers\Api\PurchaseOrderController;
 use App\Http\Controllers\Api\RecipeController;
 use App\Http\Controllers\Api\StockReceivingController;
 use App\Http\Controllers\Api\SupplierController;
+use App\Http\Controllers\Api\WaiterOrderController;
+use App\Http\Controllers\Api\OrderController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth:sanctum', 'role:F&B Controller|General Admin'])->prefix('food-controller')->group(function () {
+    Route::get('/stockout-requests', [DepartmentStockoutRequestController::class, 'validationQueue']);
+    Route::post('/stockout-requests/{stockoutRequest}/validate', [DepartmentStockoutRequestController::class, 'validateRequest']);
+    Route::post('/stockout-requests/{stockoutRequest}/reject', [DepartmentStockoutRequestController::class, 'reject']);
+    Route::get('/consumption-report', [InventoryTransactionController::class, 'foodControllerConsumptionReport']);
+    Route::post('/consumption-report/approve', [InventoryTransactionController::class, 'approveConsumptions']);
     Route::get('/dashboard', [FoodControllerController::class, 'dashboard']);
+
+    Route::get('/orders', [OrderController::class, 'index']);
+    Route::get('/orders/{id}', [OrderController::class, 'show']);
+    Route::post('/orders/{id}/approve-cancel', [WaiterOrderController::class, 'approveCancel']);
+    Route::post('/orders/{id}/void', [WaiterOrderController::class, 'voidOrder']);
 
     Route::get('/alerts', [NotificationController::class, 'index']);
     Route::get('/alerts/unread-count', [NotificationController::class, 'unreadCount']);

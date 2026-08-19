@@ -7,6 +7,7 @@ use App\Models\Bill;
 use App\Models\CreditAccount;
 use App\Models\CreditAgreement;
 use App\Models\CreditOrder;
+use App\Models\CreditSettlement;
 use App\Services\CreditOrderService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -315,7 +316,7 @@ class CreditOrderController extends Controller
     {
         $this->requirePermission($request, 'credit.orders.read');
 
-        $q = CreditOrder::with(['account', 'agreement', 'authorizedUser', 'order', 'bill'])->latest();
+        $q = CreditOrder::with(['account', 'agreement', 'authorizedUser', 'order', 'bill', 'settlements.receiver', 'settlements.approver'])->latest();
 
         if ($request->filled('status')) $q->where('status', $request->status);
         if ($request->filled('credit_account_id')) $q->where('credit_account_id', $request->integer('credit_account_id'));
@@ -397,6 +398,7 @@ class CreditOrderController extends Controller
     public function settle(Request $request, $id)
     {
         $this->requirePermission($request, 'credit.orders.settle');
+        abort_unless($request->user()?->hasAnyRole(['Finance', 'General Admin']), 403, 'Only Finance can record credit payments.');
         $data = $request->validate([
             'amount' => 'required|numeric|min:0.01',
             'payment_method' => 'required|in:cash,card,mobile,transfer',
@@ -404,7 +406,19 @@ class CreditOrderController extends Controller
             'settled_at' => 'nullable|date',
             'notes' => 'nullable|string|max:1000',
         ]);
-        return response()->json(['success' => true, 'message' => 'Credit settlement recorded.', 'data' => $this->creditOrderService->settle(CreditOrder::findOrFail($id), $data, (int) $request->user()->id)], 201);
+        return response()->json(['success' => true, 'message' => 'Credit payment recorded and sent for Manager approval.', 'data' => $this->creditOrderService->recordSettlement(CreditOrder::findOrFail($id), $data, (int) $request->user()->id)], 201);
+    }
+
+    public function approveSettlement(Request $request, $settlementId)
+    {
+        $this->requirePermission($request, 'credit.orders.approve');
+        abort_unless($request->user()?->hasAnyRole(['Manager', 'General Admin']), 403, 'Only a Manager can approve credit payments.');
+        $data = $request->validate(['note' => 'nullable|string|max:1000']);
+        return response()->json([
+            'success' => true,
+            'message' => 'Credit payment approved and balances updated.',
+            'data' => $this->creditOrderService->approveSettlement(CreditSettlement::findOrFail($settlementId), (int) $request->user()->id, $data['note'] ?? null),
+        ]);
     }
 
 

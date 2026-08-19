@@ -21,6 +21,13 @@ class InventoryTransaction extends Model
         'reference_id',
         'note',
         'created_by',
+        'responsible_user_id',
+        'custody_status',
+        'received_at',
+        'used_quantity',
+        'return_requested_quantity',
+        'return_request_reason',
+        'return_requested_at',
     ];
 
     protected $casts = [
@@ -28,6 +35,10 @@ class InventoryTransaction extends Model
         'unit_cost' => 'decimal:3',
         'before_quantity' => 'decimal:3',
         'after_quantity' => 'decimal:3',
+        'received_at' => 'datetime',
+        'used_quantity' => 'decimal:3',
+        'return_requested_quantity' => 'decimal:3',
+        'return_requested_at' => 'datetime',
     ];
 
     public function inventoryItem()
@@ -38,5 +49,15 @@ class InventoryTransaction extends Model
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function department()
+    {
+        return $this->belongsTo(Department::class, 'reference_id')->withTrashed();
+    }
+
+    public function responsibleUser()
+    {
+        return $this->belongsTo(User::class, 'responsible_user_id');
     }
 }

@@ -10,8 +10,9 @@ class RefundRequest extends Model
     use HasFactory;
 
     protected $fillable = [
-        'payment_id', 'status', 'amount', 'reason',
-        'requested_by', 'approved_by', 'requested_at', 'approved_at', 'processed_at',
+        'payment_id', 'status', 'amount', 'reason', 'decision_note',
+        'refund_method', 'refund_reference', 'proof_path',
+        'requested_by', 'approved_by', 'processed_by', 'requested_at', 'approved_at', 'processed_at',
     ];
 
     protected $casts = [
@@ -35,4 +36,6 @@ class RefundRequest extends Model
     {
         return $this->belongsTo(User::class, 'approved_by');
     }
+
+    public function processor() { return $this->belongsTo(User::class, 'processed_by'); }
 }

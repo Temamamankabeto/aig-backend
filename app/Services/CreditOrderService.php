@@ -175,7 +175,7 @@ class CreditOrderService
         return $agreement?->end_date ?? now()->addMonth();
     }
 
-    public function settle(CreditOrder $creditOrder, array $data, int $userId): CreditOrder
+    public function recordSettlement(CreditOrder $creditOrder, array $data, int $userId): CreditOrder
     {
         return DB::transaction(function () use ($creditOrder, $data, $userId) {
             $creditOrder = CreditOrder::with(['account','bill'])->lockForUpdate()->findOrFail($creditOrder->id);
@@ -183,7 +183,11 @@ class CreditOrderService
                 throw new RuntimeException('Only approved, overdue, or partially settled credit orders can be settled.');
             }
             $amount = round((float) $data['amount'], 2);
-            if ($amount <= 0 || $amount > round((float) $creditOrder->remaining_amount, 2)) {
+            $pendingAmount = round((float) CreditSettlement::where('credit_order_id', $creditOrder->id)
+                ->where('status', 'pending_approval')
+                ->sum('amount'), 2);
+            $availableToRecord = max(0, round((float) $creditOrder->remaining_amount - $pendingAmount, 2));
+            if ($amount <= 0 || $amount > $availableToRecord) {
                 throw new RuntimeException('Settlement amount is invalid or exceeds remaining balance.');
             }
             CreditSettlement::create([
@@ -194,7 +198,26 @@ class CreditOrderService
                 'received_by' => $userId,
                 'settled_at' => $data['settled_at'] ?? now(),
                 'notes' => $data['notes'] ?? null,
+                'status' => 'pending_approval',
             ]);
+            CreditApprovalLog::create(['credit_order_id' => $creditOrder->id, 'action' => 'payment_recorded', 'actor_id' => $userId, 'note' => $data['notes'] ?? null]);
+            return $creditOrder->fresh(['account','authorizedUser','authorizedUsers','order','bill','settlements.receiver','settlements.approver','logs']);
+        });
+    }
+
+    public function approveSettlement(CreditSettlement $settlement, int $userId, ?string $note = null): CreditOrder
+    {
+        return DB::transaction(function () use ($settlement, $userId, $note) {
+            $settlement = CreditSettlement::lockForUpdate()->findOrFail($settlement->id);
+            if ($settlement->status !== 'pending_approval') {
+                throw new RuntimeException('Only pending credit payments can be approved.');
+            }
+            $creditOrder = CreditOrder::with(['account','bill'])->lockForUpdate()->findOrFail($settlement->credit_order_id);
+            $amount = round((float) $settlement->amount, 2);
+            if ($amount > round((float) $creditOrder->remaining_amount, 2)) {
+                throw new RuntimeException('Payment exceeds the remaining credit balance.');
+            }
+            $settlement->update(['status' => 'approved', 'approved_by' => $userId, 'approved_at' => now(), 'approval_note' => $note]);
             $creditOrder->paid_amount = round((float) $creditOrder->paid_amount + $amount, 2);
             $creditOrder->remaining_amount = max(0, round((float) $creditOrder->total_amount - (float) $creditOrder->paid_amount, 2));
             $creditOrder->status = $creditOrder->remaining_amount <= 0 ? 'fully_settled' : 'partially_settled';
@@ -208,8 +231,8 @@ class CreditOrderService
             if ($creditOrder->bill->balance <= 0) $creditOrder->bill->paid_at = now();
             $creditOrder->bill->save();
             $creditOrder->order?->update(['credit_status' => $creditOrder->status]);
-            CreditApprovalLog::create(['credit_order_id' => $creditOrder->id, 'action' => 'settled', 'actor_id' => $userId, 'note' => $data['notes'] ?? null]);
-            return $creditOrder->fresh(['account','authorizedUser','authorizedUsers','order','bill','settlements.receiver','logs']);
+            CreditApprovalLog::create(['credit_order_id' => $creditOrder->id, 'action' => 'payment_approved', 'actor_id' => $userId, 'note' => $note]);
+            return $creditOrder->fresh(['account','authorizedUser','authorizedUsers','order','bill','settlements.receiver','settlements.approver','logs']);
         });
     }
 

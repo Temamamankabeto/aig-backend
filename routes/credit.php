@@ -34,6 +34,7 @@ Route::middleware(['auth:sanctum', 'role:Manager|Finance|Cashier|General Admin']
     Route::post('/credit/orders/{id}/approve', [CreditOrderController::class, 'approve']);
     Route::post('/credit/orders/{id}/reject', [CreditOrderController::class, 'reject']);
     Route::post('/credit/orders/{id}/settlements', [CreditOrderController::class, 'settle']);
+    Route::post('/credit/settlements/{settlementId}/approve', [CreditOrderController::class, 'approveSettlement']);
 
     Route::get('/credit/reports/summary', [CreditOrderController::class, 'reportsSummary']);
 });

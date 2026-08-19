@@ -17,7 +17,11 @@ class InventoryReportController extends Controller
         }
 
         $rows = InventoryItem::with('batches')
-            ->where('is_active', true)
+            // Legacy records may have NULL in is_active. The inventory item UI
+            // already treats those records as active, so reports must do the same.
+            ->where(function ($query) {
+                $query->where('is_active', true)->orWhereNull('is_active');
+            })
             ->whereColumn('current_stock', '<=', 'minimum_quantity')
             ->orderBy('current_stock')
             ->get()

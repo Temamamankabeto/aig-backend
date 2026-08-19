@@ -104,4 +104,5 @@ class Order extends Model
     public function creditAccount() { return $this->belongsTo(CreditAccount::class, 'credit_account_id'); }
     public function creditAgreement() { return $this->belongsTo(CreditAgreement::class, 'credit_agreement_id'); }
     public function creditOrder() { return $this->hasOne(CreditOrder::class, 'order_id'); }
+    public function payments() { return $this->hasMany(Payment::class, 'order_id'); }
 }

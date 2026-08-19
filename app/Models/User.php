@@ -18,11 +18,11 @@ protected $guard_name = 'sanctum';
 protected $fillable=[
 'name','email','phone','profile_image',
 
-'password','is_active','address',
+'password','is_active','address','department_id',
 ];
 
     protected $hidden = [
-        'password', 'remember_token',
+        'password', 'remember_token', 'refresh_token', 'refresh_token_expires_at',
     ];
 
     protected $casts = [
@@ -77,6 +77,11 @@ protected $fillable=[
     public function tables()
     {
     return $this->hasMany(DiningTable::class, 'assigned_waiter_id');
+    }
+
+    public function department()
+    {
+        return $this->belongsTo(Department::class)->withTrashed();
     }
 
     protected $appends = ['profile_image_url'];

@@ -19,6 +19,14 @@ class BarTicketController extends Controller
 
     public function index(Request $request)
     {
+        $filters = $request->validate([
+            'status' => 'nullable|string|max:30',
+            'date_from' => 'nullable|date',
+            'date_to' => 'nullable|date|after_or_equal:date_from',
+            'report' => 'nullable|boolean',
+            'search' => 'nullable|string|max:100',
+            'per_page' => 'nullable|integer|min:1|max:200',
+        ]);
         $perPage = (int) $request->get('per_page', 20);
     
         if ($perPage <= 0) {
@@ -40,16 +48,22 @@ class BarTicketController extends Controller
                 'orderItem.order.waiter',
                 'orderItem.menuItem',
             ])
-            ->whereNotIn('status', ['pending', 'served'])
             ->orderByDesc('id');
+
+        if (! $request->boolean('report')) {
+            $q->whereNotIn('status', ['pending', 'served']);
+        }
     
         if ($request->filled('status')) {
             $status = $request->status;
     
-            if (!in_array($status, ['pending', 'served'], true)) {
+            if ($request->boolean('report') || !in_array($status, ['pending', 'served'], true)) {
                 $q->where('status', $status);
             }
         }
+
+        if (! empty($filters['date_from'])) $q->whereDate('created_at', '>=', $filters['date_from']);
+        if (! empty($filters['date_to'])) $q->whereDate('created_at', '<=', $filters['date_to']);
     
         // 🔎 Live search by order number OR waiter name
         if ($search !== '') {

@@ -5,6 +5,8 @@ use App\Http\Controllers\Api\AnalyticsReportController;
 use App\Http\Controllers\Api\InventoryReportController;
 use App\Http\Controllers\Api\DiningTableController;
 use App\Http\Controllers\Api\PurchaseOrderController;
+use App\Http\Controllers\Api\WaiterOrderController;
+use App\Http\Controllers\Api\OrderController;
 use Illuminate\Support\Facades\Route;
 use App\Models\User;
 
@@ -26,6 +28,11 @@ Route::middleware(['auth:sanctum', 'role:Manager|General Admin'])->group(functio
     Route::get('/manager/reports/stock-status-summary', [InventoryReportController::class, 'stockStatusSummary']);
     Route::get('/manager/reports/expired-items', [InventoryReportController::class, 'expiredItems']);
     Route::get('/manager/reports/receiving-history', [InventoryReportController::class, 'receivingHistory']);
+
+    Route::get('/manager/orders', [OrderController::class, 'index']);
+    Route::get('/manager/orders/{id}', [OrderController::class, 'show']);
+    Route::post('/manager/orders/{id}/approve-cancel', [WaiterOrderController::class, 'approveCancel']);
+    Route::post('/manager/orders/{id}/void', [WaiterOrderController::class, 'voidOrder']);
 
 
     // Manager owns table management. Admin sidebar access is removed from the frontend.

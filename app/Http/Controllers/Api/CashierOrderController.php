@@ -157,7 +157,8 @@ class CashierOrderController extends Controller
             'creator',
             'waiter',
             'items.menuItem.category',
-            'bill.payments',
+            'bill.payments.refundRequests',
+            'payments.refundRequests',
         ])->findOrFail($id);
 
         return response()->json([
@@ -755,6 +756,14 @@ class CashierOrderController extends Controller
             ->findOrFail($id);
         $this->authorize('update', $order);
 
+        if ((string) $order->payment_type === 'credit') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cashiers can receive payment for cash orders only. Credit payments must be recorded by Finance and approved by a Manager.',
+                'data' => null,
+            ], 422);
+        }
+
         $data = $request->validate([
             'customer_name' => 'nullable|string|max:120',
             'customer_tin' => 'nullable|string|max:80',
@@ -817,10 +826,9 @@ class CashierOrderController extends Controller
                 ], 422);
             }
 
-            $isCreditOrder = (string) $order->payment_type === 'credit';
-            $method = $isCreditOrder ? 'credit' : ($data['payment_method'] ?? $order->payment_method ?? 'cash');
+            $method = $data['payment_method'] ?? $order->payment_method ?? 'cash';
 
-            if ($method === 'credit' && ! $isCreditOrder) {
+            if ($method === 'credit') {
                 $method = 'cash';
             }
 
@@ -839,7 +847,7 @@ class CashierOrderController extends Controller
                 'payment_received_by' => $request->user()->id,
                 'status' => 'completed',
                 'completed_at' => now(),
-                'credit_status' => $isCreditOrder ? 'paid' : $order->credit_status,
+                'credit_status' => $order->credit_status,
             ]);
 
             // Keep legacy bill data synchronized only when a bill already exists.
@@ -857,11 +865,24 @@ class CashierOrderController extends Controller
                 ]);
             }
 
+            Payment::updateOrCreate(
+                ['order_id' => $order->id],
+                [
+                    'bill_id' => $order->bill?->id,
+                    'method' => $method,
+                    'amount' => $total,
+                    'reference' => null,
+                    'status' => 'paid',
+                    'finance_status' => 'pending',
+                    'received_by' => $request->user()->id,
+                    'cash_shift_id' => $shift->id,
+                    'paid_at' => now(),
+                ]
+            );
+
             return response()->json([
                 'success' => true,
-                'message' => $isCreditOrder
-                    ? 'Credit order payment received successfully.'
-                    : 'Cash order payment received successfully.',
+                'message' => 'Cash order payment received successfully.',
                 'data' => $order->fresh(['items.menuItem.category', 'table', 'waiter', 'creator', 'bill']),
             ]);
         });

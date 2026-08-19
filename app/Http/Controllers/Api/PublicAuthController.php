@@ -7,6 +7,9 @@ use App\Models\User;
 use App\Support\RoleNames;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\Rule;
 
 class PublicAuthController extends Controller
@@ -17,7 +20,7 @@ class PublicAuthController extends Controller
             'name' => 'required|string|max:255',
             'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')],
             'phone' => 'required|string|max:20',
-            'password' => 'required|string|min:6|confirmed',
+            'password' => ['required', 'confirmed', Password::min(12)->mixedCase()->letters()->numbers()->symbols()],
         ]);
 
         $user = User::create([
@@ -29,7 +32,7 @@ class PublicAuthController extends Controller
 
         $user->assignRole(RoleNames::CUSTOMER);
 
-        $token = $user->createToken('public_auth')->plainTextToken;
+        $token = $user->createToken('public_auth', ['*'], now()->addMinutes(config('auth_security.access_token_ttl_minutes', 15)))->plainTextToken;
 
         return response()->json([
             'success' => true,
@@ -59,19 +62,42 @@ class PublicAuthController extends Controller
             ], 422);
         }
 
+        $rateLimitKey = 'public-login:'.hash('sha256', Str::lower($login).'|'.$request->ip());
+        if (RateLimiter::tooManyAttempts($rateLimitKey, config('auth_security.max_login_attempts', 5))) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Too many login attempts. Try again later.',
+                'data' => null,
+                'meta' => ['retry_after_seconds' => RateLimiter::availableIn($rateLimitKey)],
+            ], 429);
+        }
+
         $user = User::query()
             ->where('email', $login)
             ->orWhere('phone', $login)
             ->first();
 
         if (!$user || !Hash::check($validated['password'], $user->password)) {
+            RateLimiter::hit($rateLimitKey, config('auth_security.lockout_seconds', 900));
             return response()->json([
                 'success' => false,
                 'message' => 'Invalid email/phone number or password.',
             ], 422);
         }
 
-        $token = $user->createToken('public_auth')->plainTextToken;
+        if (! $user->is_active) {
+            RateLimiter::hit($rateLimitKey, config('auth_security.lockout_seconds', 900));
+            return response()->json([
+                'success' => false,
+                'message' => 'Your account is disabled.',
+                'data' => null,
+                'meta' => null,
+            ], 403);
+        }
+
+        RateLimiter::clear($rateLimitKey);
+        $user->tokens()->delete();
+        $token = $user->createToken('public_auth', ['*'], now()->addMinutes(config('auth_security.access_token_ttl_minutes', 15)))->plainTextToken;
 
         return response()->json([
             'success' => true,

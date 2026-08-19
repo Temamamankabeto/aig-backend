@@ -60,6 +60,16 @@ class OrderPolicy
             || $this->hasOperationalOrderRole($user);
     }
 
+    public function approveCancel(User $user): bool
+    {
+        return $this->isOrderVoidApprover($user);
+    }
+
+    public function voidOrder(User $user): bool
+    {
+        return $this->isOrderVoidApprover($user);
+    }
+
     public function waiterReports(User $user): bool
     {
         return $this->allows($user, 'orders.read') || $this->hasAnyRoleName($user, ['waiter', 'manager', 'cafeteria manager', 'general admin', 'admin']);
@@ -77,6 +87,18 @@ class OrderPolicy
         return $this->hasAnyRoleName($user, [
             'cashier',
             'waiter',
+            'f&b controller',
+            'cafeteria manager',
+            'manager',
+            'general admin',
+            'admin',
+        ]);
+    }
+
+    private function isOrderVoidApprover(User $user): bool
+    {
+        return $this->hasAnyRoleName($user, [
+            'f&b controller',
             'cafeteria manager',
             'manager',
             'general admin',

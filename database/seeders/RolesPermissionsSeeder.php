@@ -250,6 +250,8 @@ class RolesPermissionsSeeder extends Seeder
                 'inventory.waste.create',
                 'inventory.movements.read',
                 'inventory.batches.read',
+                'inventory.low_stock.read',
+                'inventory.alerts.read',
 
                 'stock.receive',
 
@@ -293,6 +295,7 @@ class RolesPermissionsSeeder extends Seeder
                 'recipes.integrity.read',
 
                 'stock_receiving.approve',
+                'reports.sales.read',
             ],
 
             RoleNames::MANAGER => [

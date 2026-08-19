@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\BillController;
 use App\Http\Controllers\Api\CashShiftController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DiningTableController;
+use App\Http\Controllers\Api\DepartmentController;
 use App\Http\Controllers\Api\InventoryItemController;
 use App\Http\Controllers\Api\InventoryReportController;
 use App\Http\Controllers\Api\InventoryTransactionController;
@@ -31,6 +32,8 @@ Route::middleware('auth:sanctum')->group(function () {
 });
 Route::middleware(['auth:sanctum', 'role:General Admin'])->prefix('admin')->group(function () {
     Route::get('/general/dashboard', [DashboardController::class, 'generalDashboard']);
+
+    Route::apiResource('departments', DepartmentController::class);
 
     Route::get('/reports/sales-analytics', [AnalyticsReportController::class, 'salesAnalytics']);
     Route::get('/reports/item-popularity', [AnalyticsReportController::class, 'itemPopularity']);
@@ -133,6 +136,8 @@ Route::post('/menu/items/{id}/image', [MenuItemController::class, 'uploadImage']
     Route::get('/waiter/orders/rejected', [WaiterOrderController::class, 'rejectedOrders']);
     Route::get('/waiter/orders/ready', [WaiterOrderController::class, 'readyOrders']);
     Route::get('/waiter/orders/served', [WaiterOrderController::class, 'servedOrders']);
+    Route::post('/orders/{id}/approve-cancel', [WaiterOrderController::class, 'approveCancel']);
+    Route::post('/orders/{id}/void', [WaiterOrderController::class, 'voidOrder']);
     Route::get('/waiter/reports/sold-items', [WaiterOrderController::class, 'waiterSoldItems']);
     Route::get('/report/categories', [WaiterOrderController::class, 'categories']);
 
@@ -182,6 +187,10 @@ Route::post('/menu/items/{id}/image', [MenuItemController::class, 'uploadImage']
     Route::delete('/inventory/items/{id}/force', [InventoryItemController::class, 'forceDelete']);
 
     Route::get('/inventory/transactions', [InventoryTransactionController::class, 'index']);
+    Route::get('/inventory/stock-balances', [InventoryTransactionController::class, 'stockBalances']);
+    Route::get('/inventory/returnable-issues', [InventoryTransactionController::class, 'returnableIssues']);
+    Route::get('/inventory/items/{id}/stock-card', [InventoryTransactionController::class, 'stockCard']);
+    Route::post('/inventory/issues/{id}/return', [InventoryTransactionController::class, 'returnToStore']);
     Route::post('/inventory/items/{id}/adjust', [InventoryTransactionController::class, 'adjust']);
     Route::post('/inventory/items/{id}/waste', [InventoryTransactionController::class, 'waste']);
     Route::post('/inventory/items/{id}/transfer', [InventoryTransactionController::class, 'transfer']);

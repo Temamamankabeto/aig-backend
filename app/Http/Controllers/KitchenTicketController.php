@@ -19,6 +19,14 @@ class KitchenTicketController extends Controller
 
     public function index(Request $request)
     {
+        $filters = $request->validate([
+            'status' => 'nullable|string|max:30',
+            'date_from' => 'nullable|date',
+            'date_to' => 'nullable|date|after_or_equal:date_from',
+            'report' => 'nullable|boolean',
+            'search' => 'nullable|string|max:100',
+            'per_page' => 'nullable|integer|min:1|max:200',
+        ]);
         $perPage = (int) $request->get('per_page', 20);
     
         if ($perPage <= 0) {
@@ -41,12 +49,18 @@ class KitchenTicketController extends Controller
                 'orderItem.menuItem',
                 'chef',
             ])
-            ->where('status', '!=', 'served')
             ->orderByDesc('id');
+
+        if (! $request->boolean('report')) {
+            $q->where('status', '!=', 'served');
+        }
     
         if ($request->filled('status')) {
             $q->where('status', $request->status);
         }
+
+        if (! empty($filters['date_from'])) $q->whereDate('created_at', '>=', $filters['date_from']);
+        if (! empty($filters['date_to'])) $q->whereDate('created_at', '<=', $filters['date_to']);
     
         if ($search !== '') {
             $q->where(function ($query) use ($search) {

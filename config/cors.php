@@ -1,43 +1,42 @@
 <?php
 
-return [
+$configuredOrigins = array_values(array_filter(array_map(
+    'trim',
+    explode(',', (string) env('CORS_ALLOWED_ORIGINS', ''))
+)));
 
-    /*
-    |--------------------------------------------------------------------------
-    | Cross-Origin Resource Sharing (CORS) Configuration
-    |--------------------------------------------------------------------------
-    |
-    | Configure your settings for cross-origin requests (CORS).
-    | These determine what operations may be executed in browsers.
-    |
-    */
+$defaultOrigins = array_values(array_filter([
+    env('FRONTEND_URL'),
+    'https://aigcafe.com',
+    'https://www.aigcafe.com',
+]));
 
-   'paths' => ['api/*', 'auth/*', 'sanctum/csrf-cookie'],
-
-    'allowed_methods' => ['*'], // Allow all HTTP methods (GET, POST, etc.)
-
-    'allowed_origins' => [
+if (env('APP_ENV', 'production') === 'local') {
+    $defaultOrigins = array_merge($defaultOrigins, [
         'http://localhost:3000',
         'http://127.0.0.1:3000',
-        'http://192.168.2.1:3000',
-        'http://127.0.0.1:8000',
-        'https://aigcafe.com',
-        'https://www.aigcafe.com',
-        'https://cafeaig.vercel.app'
-    ],
+    ]);
+}
 
+$origins = array_values(array_unique(array_merge(
+    $configuredOrigins,
+    $defaultOrigins
+)));
+
+return [
+    'paths' => ['api/*', 'sanctum/csrf-cookie'],
+    'allowed_methods' => ['*'],
+    'allowed_origins' => $origins,
     'allowed_origins_patterns' => [],
-
-    'allowed_headers' => ['*'], // Allow all headers (e.g., Content-Type, X-XSRF-TOKEN)
-
-    'exposed_headers' => [
+    'allowed_headers' => [
+        'Accept',
         'Authorization',
-        'X-CSRF-TOKEN',
+        'Content-Type',
+        'Origin',
         'X-Requested-With',
+        'X-XSRF-TOKEN',
     ],
-
-    'max_age' => 3600, // Cache preflight responses for 1 hour
-
-    'supports_credentials' => true, // Required for cookie-based auth like Laravel Sanctum
-
+    'exposed_headers' => [],
+    'max_age' => 3600,
+    'supports_credentials' => true,
 ];

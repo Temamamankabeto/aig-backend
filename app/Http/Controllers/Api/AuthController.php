@@ -7,8 +7,10 @@ use App\Models\User;
 use App\Support\RoleNames;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Validation\Rules\Password;
 use Illuminate\Support\Str;
 
 class AuthController extends Controller
@@ -19,7 +21,7 @@ class AuthController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
             'phone' => ['required', 'string', 'max:20'],
-            'password' => ['required', 'confirmed', 'min:8'],
+            'password' => ['required', 'confirmed', Password::min(12)->mixedCase()->letters()->numbers()->symbols()],
             'address' => ['nullable', 'string', 'max:500'],
         ]);
 
@@ -42,15 +44,15 @@ class AuthController extends Controller
 
         $user->assignRole(RoleNames::CUSTOMER);
 
-        $accessToken = $user->createToken('aig-api-token')->plainTextToken;
+        $accessToken = $this->issueAccessToken($user);
         $refreshToken = Str::random(64);
 
         $user->forceFill([
             'refresh_token' => hash('sha256', $refreshToken),
-            'refresh_token_expires_at' => now()->addDays(30),
+            'refresh_token_expires_at' => now()->addMinutes(config('auth_security.refresh_token_ttl_minutes', 43200)),
         ])->save();
 
-        return response()->json($this->authPayload($user, $accessToken, $refreshToken), 201)
+        return response()->json($this->authPayload($user, $accessToken), 201)
             ->cookie($this->refreshCookie($refreshToken));
     }
 
@@ -71,33 +73,47 @@ class AuthController extends Controller
             ]);
         }
 
+        $rateLimitKey = $this->loginRateLimitKey($request, $login);
+        if (RateLimiter::tooManyAttempts($rateLimitKey, config('auth_security.max_login_attempts', 5))) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Too many login attempts. Try again later.',
+                'data' => null,
+                'meta' => ['retry_after_seconds' => RateLimiter::availableIn($rateLimitKey)],
+            ], 429);
+        }
+
         $user = User::query()
             ->where('email', $login)
             ->orWhere('phone', $login)
             ->first();
 
         if (!$user || !Hash::check($validated['password'], $user->password)) {
+            RateLimiter::hit($rateLimitKey, config('auth_security.lockout_seconds', 900));
             throw ValidationException::withMessages([
                 'login' => ['Invalid email/phone number or password.'],
             ]);
         }
 
         if (!$user->is_active) {
+            RateLimiter::hit($rateLimitKey, config('auth_security.lockout_seconds', 900));
             return response()->json([
                 'success' => false,
                 'message' => 'Your account is disabled. Please contact the administrator.',
             ], 403);
         }
 
-        $accessToken = $user->createToken('aig-api-token')->plainTextToken;
+        RateLimiter::clear($rateLimitKey);
+        $user->tokens()->delete();
+        $accessToken = $this->issueAccessToken($user);
         $refreshToken = Str::random(64);
 
         $user->forceFill([
             'refresh_token' => hash('sha256', $refreshToken),
-            'refresh_token_expires_at' => now()->addDays(30),
+            'refresh_token_expires_at' => now()->addMinutes(config('auth_security.refresh_token_ttl_minutes', 43200)),
         ])->save();
 
-        return response()->json($this->authPayload($user, $accessToken, $refreshToken))
+        return response()->json($this->authPayload($user, $accessToken))
             ->cookie($this->refreshCookie($refreshToken));
     }
 
@@ -118,7 +134,7 @@ class AuthController extends Controller
     {
         $user = $request->user();
 
-        $user?->currentAccessToken()?->delete();
+        $user?->tokens()->delete();
         $user?->forceFill([
             'refresh_token' => null,
             'refresh_token_expires_at' => null,
@@ -127,16 +143,15 @@ class AuthController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Logged out successfully',
-        ])->withoutCookie('refresh_token');
+        ])->withoutCookie('refresh_token', '/', config('auth_security.cookie_domain'));
     }
 
-    protected function authPayload(User $user, string $accessToken, string $refreshToken): array
+    protected function authPayload(User $user, string $accessToken): array
     {
         return [
             'success' => true,
             'message' => 'Authenticated successfully',
             'token' => $accessToken,
-            'refresh_token' => $refreshToken,
             'user' => $this->userPayload($user),
             'roles' => $user->getRoleNames()->values()->all(),
             'permissions' => $user->getAllPermissions()->pluck('name')->values()->all(),
@@ -151,6 +166,7 @@ class AuthController extends Controller
             'email' => $user->email,
             'phone' => $user->phone,
             'address' => $user->address,
+            'department_id' => $user->department_id,
             'status' => $user->is_active ? 'active' : 'disabled',
             'roles' => $user->getRoleNames()->values()->all(),
             'permissions' => $user->getAllPermissions()->pluck('name')->values()->all(),
@@ -162,11 +178,25 @@ class AuthController extends Controller
         return cookie(
             'refresh_token',
             $refreshToken,
-            60 * 24 * 30,
+            config('auth_security.refresh_token_ttl_minutes', 43200),
             '/',
-            null,
+            config('auth_security.cookie_domain'),
             app()->environment('production'),
             true
-        )->withSameSite('Lax');
+        )->withSameSite(config('auth_security.cookie_same_site', 'lax'));
+    }
+
+    protected function issueAccessToken(User $user): string
+    {
+        return $user->createToken(
+            'aig-api-token',
+            ['*'],
+            now()->addMinutes(config('auth_security.access_token_ttl_minutes', 15))
+        )->plainTextToken;
+    }
+
+    protected function loginRateLimitKey(Request $request, string $login): string
+    {
+        return 'login:'.hash('sha256', Str::lower($login).'|'.$request->ip());
     }
 }

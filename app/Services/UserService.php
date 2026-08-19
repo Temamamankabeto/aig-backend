@@ -19,7 +19,7 @@ class UserService
         $search = trim((string) ($filters['search'] ?? ''));
         $status = $filters['status'] ?? null;
 
-        $query = User::query()->with('roles');
+        $query = User::query()->with(['roles', 'department']);
 
         if ($search !== '') {
             $query->where(function ($q) use ($search) {
@@ -51,6 +51,8 @@ class UserService
                     'phone' => $user->phone,
                     'status' => $user->is_active ? 'active' : 'disabled',
                     'role' => $user->roles->pluck('name')->first(),
+                    'department_id' => $user->department_id,
+                    'department' => $user->department,
                     'profile_image_url' => $user->profile_image_url,
                     'created_at' => $user->created_at,
                 ];
@@ -66,7 +68,7 @@ class UserService
 
     public function getUser(int|string $id): User
     {
-        return User::with('roles')->findOrFail($id);
+        return User::with(['roles', 'department'])->findOrFail($id);
     }
 
     public function getRolesLite()
@@ -86,13 +88,14 @@ class UserService
             'name' => $data['name'],
             'email' => $data['email'],
             'phone' => $data['phone'],
+            'department_id' => $data['department_id'],
             'password' => Hash::make($data['password']),
             'is_active' => true,
         ]);
 
         $user->syncRoles([$role->name]);
 
-        return $user->load('roles');
+        return $user->load(['roles', 'department']);
     }
 
     public function updateUser(User $user, array $data): User
@@ -103,11 +106,12 @@ class UserService
             'name' => $data['name'],
             'email' => $data['email'],
             'phone' => $data['phone'],
+            'department_id' => $data['department_id'],
         ]);
 
         $user->syncRoles([$role->name]);
 
-        return $user->load('roles');
+        return $user->load(['roles', 'department']);
     }
 
     public function assignRole(User $user, string $roleName): User
@@ -124,6 +128,10 @@ class UserService
         $user->is_active = !$user->is_active;
         $user->save();
 
+        if (! $user->is_active) {
+            $this->revokeAuthentication($user);
+        }
+
         return $user->load('roles');
     }
 
@@ -131,6 +139,7 @@ class UserService
     {
         $user->password = Hash::make($newPassword);
         $user->save();
+        $this->revokeAuthentication($user);
 
         return $user;
     }
@@ -158,7 +167,8 @@ class UserService
         $user->email = $data['email'];
         $user->phone = $data['phone'];
 
-        if (!empty($data['new_password'])) {
+        $passwordChanged = ! empty($data['new_password']);
+        if ($passwordChanged) {
             if (empty($data['old_password'])) {
                 throw ValidationException::withMessages([
                     'old_password' => ['Old password is required when setting a new password.'],
@@ -184,6 +194,10 @@ class UserService
         }
 
         $user->save();
+
+        if ($passwordChanged) {
+            $this->revokeAuthentication($user);
+        }
 
         return $user->load('roles');
     }
@@ -219,5 +233,14 @@ class UserService
             ->where('name', $canonicalRole)
             ->where('guard_name', 'sanctum')
             ->firstOrFail();
+    }
+
+    protected function revokeAuthentication(User $user): void
+    {
+        $user->tokens()->delete();
+        $user->forceFill([
+            'refresh_token' => null,
+            'refresh_token_expires_at' => null,
+        ])->save();
     }
 }

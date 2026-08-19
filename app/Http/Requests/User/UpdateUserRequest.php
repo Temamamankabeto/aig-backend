@@ -30,6 +30,13 @@ class UpdateUserRequest extends FormRequest
                 'max:20',
                 Rule::unique('users', 'phone')->ignore($userId),
             ],
+            'department_id' => [
+                'required',
+                'integer',
+                Rule::exists('departments', 'id')->where(
+                    fn ($q) => $q->where('is_active', true)->whereNull('deleted_at')
+                ),
+            ],
             'role' => [
                 'required',
                 'string',

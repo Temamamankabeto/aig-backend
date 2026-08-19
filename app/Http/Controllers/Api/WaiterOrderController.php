@@ -383,7 +383,7 @@ public function store(StoreOrderRequest $request)
    $order = Order::findOrFail($id);
    $this->authorize('requestCancel', $order);
    $data = $request->validate([
-   'reason' => 'nullable|string|max:1000',
+   'reason' => 'required|string|max:1000',
    ]);
 
    return DB::transaction(function () use ($id, $data) {
@@ -425,13 +425,14 @@ public function store(StoreOrderRequest $request)
    'status' => 'cancel_requested',
    'cancel_requested_at' => now(),
    'cancel_requested_by' => auth()->id(),
-   'cancel_request_reason' => $data['reason'] ?? null,
+   'cancel_request_reason' => $data['reason'],
    ]);
 
    return response()->json([
    'success' => true,
-   'message' => 'Cancellation requested successfully.',
+   'message' => 'Void request submitted successfully and is awaiting approval.',
    'data' => $order->fresh(['items.menuItem', 'bill', 'table']),
+   'meta' => [],
    ]);
    });
    }
@@ -439,13 +440,13 @@ public function store(StoreOrderRequest $request)
    public function approveCancel(Request $request, $id)
    {
    $order = Order::findOrFail($id);
-   $this->authorize('update', $order);
+   $this->authorize('approveCancel', Order::class);
    $data = $request->validate([
    'reason' => 'nullable|string|max:1000',
    ]);
 
    return DB::transaction(function () use ($id, $data) {
-   $order = Order::with(['bill', 'items', 'table'])
+   $order = Order::with(['bill.payments', 'items', 'table'])
    ->lockForUpdate()
    ->findOrFail($id);
 
@@ -456,10 +457,20 @@ public function store(StoreOrderRequest $request)
    ], 422);
    }
 
+   if ($this->orderHasRecordedPayment($order)) {
+   return response()->json([
+   'success' => false,
+   'message' => 'A paid or partially paid order cannot be cancelled. Submit a refund request instead.',
+   'data' => null,
+   'meta' => [],
+   ], 422);
+   }
+
    $reason = $data['reason'] ?? $order->cancel_request_reason ?? 'Order cancellation approved';
+   $before = $order->toArray();
 
    $order->update([
-   'status' => 'cancelled',
+   'status' => 'void',
    'voided_at' => now(),
    'voided_by' => auth()->id(),
    'void_reason' => $reason,
@@ -506,10 +517,29 @@ public function store(StoreOrderRequest $request)
    ]);
    }
 
+   $freshOrder = $order->fresh(['items.menuItem', 'bill', 'table']);
+
+   $this->auditLogger->log(
+   request(),
+   auth()->id(),
+   'Order',
+   $order->id,
+   'order_void_approved',
+   $before,
+   $freshOrder->toArray(),
+   'Order void request approved.',
+   [
+   'approved_by' => auth()->id(),
+   'approved_at' => now(),
+   'approval_reason' => $reason,
+   ]
+   );
+
    return response()->json([
    'success' => true,
-   'message' => 'Order cancellation approved successfully.',
-   'data' => $order->fresh(['items.menuItem', 'bill', 'table']),
+   'message' => 'Order void approved successfully.',
+   'data' => $freshOrder,
+   'meta' => [],
    ]);
    });
    }
@@ -517,13 +547,13 @@ public function store(StoreOrderRequest $request)
    public function voidOrder(Request $request, $id)
    {
    $order = Order::findOrFail($id);
-   $this->authorize('update', $order);
+   $this->authorize('voidOrder', Order::class);
    $data = $request->validate([
    'reason' => 'required|string|max:1000',
    ]);
 
    return DB::transaction(function () use ($id, $data) {
-   $order = Order::with(['bill', 'items', 'table'])
+   $order = Order::with(['bill.payments', 'items', 'table'])
    ->lockForUpdate()
    ->findOrFail($id);
 
@@ -534,7 +564,17 @@ public function store(StoreOrderRequest $request)
    ], 422);
    }
 
+   if ($this->orderHasRecordedPayment($order)) {
+   return response()->json([
+   'success' => false,
+   'message' => 'A paid or partially paid order cannot be voided. Submit a refund request instead.',
+   'data' => null,
+   'meta' => [],
+   ], 422);
+   }
+
    $reason = $data['reason'];
+   $before = $order->toArray();
 
    $order->update([
    'status' => 'void',
@@ -584,12 +624,45 @@ public function store(StoreOrderRequest $request)
    ]);
    }
 
+   $freshOrder = $order->fresh(['items.menuItem', 'bill', 'table']);
+
+   $this->auditLogger->log(
+   request(),
+   auth()->id(),
+   'Order',
+   $order->id,
+   'order_voided',
+   $before,
+   $freshOrder->toArray(),
+   'Order voided.',
+   [
+   'approved_by' => auth()->id(),
+   'approved_at' => now(),
+   'approval_reason' => $reason,
+   ]
+   );
+
    return response()->json([
    'success' => true,
    'message' => 'Order voided successfully.',
-   'data' => $order->fresh(['items.menuItem', 'bill', 'table']),
+   'data' => $freshOrder,
+   'meta' => [],
    ]);
    });
+   }
+
+   private function orderHasRecordedPayment(Order $order): bool
+   {
+   if ((float) ($order->paid_amount ?? 0) > 0 || $order->paid_at) {
+   return true;
+   }
+
+   if (in_array((string) ($order->payment_status ?? 'unpaid'), ['paid', 'partial'], true)) {
+   return true;
+   }
+
+   return $order->bill
+   && ((float) $order->bill->paid_amount > 0 || $order->bill->payments->isNotEmpty());
    }
 
 public function cancelableOrders(Request $request)
